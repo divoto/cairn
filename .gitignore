@@ -1,2 +1,13 @@
 /docs
 .idea
+.phpunit.cache
+.phpunit.result.cache
+build
+composer.lock
+coverage
+vendor
+.php-cs-fixer.cache
+.pint.cache
+.rector.cache
+.DS_Store
+Thumbs.db

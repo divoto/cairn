@@ -1,0 +1,20 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 9
+
+    paths:
+        - src
+        - config
+        - database
+        - tests
+
+    # CLAUDE.md: PHPStan level 9, zero baseline entries. If the analyser cannot be
+    # satisfied, change the design — do not add an ignore here.
+    ignoreErrors: []
+
+    # Level 9 already implies the iterable-value-type and generic-object-type
+    # checks that needed explicit flags under PHPStan 1.x.
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: true

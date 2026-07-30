@@ -1,0 +1,93 @@
+name: Bug report
+description: Something in Cairn does not behave as documented.
+labels: [bug]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not report security issues here — including any path by which
+        Cairn persists a raw IP address, writes a cookie in its default
+        configuration, or exposes the dashboard without the gate. Use
+        [private vulnerability reporting](https://github.com/divoto/cairn/security/advisories/new)
+        instead.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that reliably shows the problem.
+    validations:
+      required: true
+
+  - type: input
+    id: cairn-version
+    attributes:
+      label: Cairn version
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: laravel
+    attributes:
+      label: Laravel version
+      options: ['12', '13']
+    validations:
+      required: true
+
+  - type: dropdown
+    id: php
+    attributes:
+      label: PHP version
+      options: ['8.2', '8.3', '8.4']
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      options: [MySQL, MariaDB, PostgreSQL, SQLite, Other]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: driver
+    attributes:
+      label: Cairn driver
+      options: [database, redis]
+    validations:
+      required: true
+
+  - type: dropdown
+    id: dashboard
+    attributes:
+      label: Dashboard adapter
+      options: [blade, livewire, inertia, none]
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: >
+        Any non-default values from config/cairn.php. Please redact nothing that
+        matters and add nothing that does not — and never paste a real salt,
+        credential or visitor identifier.
+      render: php
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Stack traces, logs, screenshots.
