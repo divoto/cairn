@@ -42,6 +42,26 @@ function binaryValue(mixed $value): string
 }
 
 /**
+ * Read a query-builder value as an int.
+ *
+ * Query results are `mixed`, and different engines hand back different scalar
+ * types for the same column — SQLite returns an int where MySQL returns a
+ * numeric string.
+ */
+function columnInt(mixed $value): int
+{
+    return is_numeric($value) ? (int) $value : 0;
+}
+
+/**
+ * Read a value that should be a string, without asserting it is one.
+ */
+function asString(mixed $value): string
+{
+    return is_string($value) ? $value : '';
+}
+
+/**
  * Build an entry with sensible defaults, overriding only what a test cares
  * about.
  *

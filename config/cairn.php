@@ -57,6 +57,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Salt storage
+    |--------------------------------------------------------------------------
+    |
+    | The visitor salt lives in the cache and nowhere else. Null uses the
+    | application's default store.
+    |
+    | Choose a memory-backed store if you have one. The salt's unlinkability
+    | guarantee — that a rotated salt cannot be recovered, so yesterday's
+    | hashes can never be recomputed — is only as strong as the store's
+    | forgetfulness. A file or database store writes it to disk, where a backup
+    | may outlive the rotation. cairn:doctor reports that condition.
+    |
+    */
+
+    'cache_store' => env('CAIRN_CACHE_STORE'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Driver
     |--------------------------------------------------------------------------
     |

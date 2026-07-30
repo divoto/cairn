@@ -19,10 +19,15 @@ use Divoto\Cairn\Counting\NullUniqueCounter;
 use Divoto\Cairn\Detection\NullBotDetector;
 use Divoto\Cairn\Detection\NullDeviceDetector;
 use Divoto\Cairn\Geo\NullGeoResolver;
+use Divoto\Cairn\Identity\SessionResolver;
+use Divoto\Cairn\Identity\VisitorHasher;
 use Divoto\Cairn\Ingest\NullIngest;
 use Divoto\Cairn\Presence\NullPresence;
+use Divoto\Cairn\Privacy\IpAnonymiser;
+use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Storage\NullStorage;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
+use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Support\ServiceProvider;
 
@@ -115,6 +120,31 @@ final class CairnServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(self::CONFIG_PATH, 'cairn');
 
         $this->registerContracts();
+        $this->registerIdentity();
+    }
+
+    /**
+     * Bind the identity and privacy services.
+     *
+     * These are concrete classes rather than contracts: there is one correct
+     * way to derive a rotating visitor hash, and making it swappable would
+     * mean offering a seam through which the rotation could be removed.
+     */
+    private function registerIdentity(): void
+    {
+        $this->app->singleton(VisitorHasher::class, function (): VisitorHasher {
+            $config = $this->app->make(Repository::class);
+            $store = $config->get('cairn.cache_store');
+
+            return new VisitorHasher(
+                $this->app->make(CacheFactory::class)->store(is_string($store) && $store !== '' ? $store : null),
+                $config,
+            );
+        });
+
+        $this->app->singleton(SessionResolver::class);
+        $this->app->singleton(IpAnonymiser::class);
+        $this->app->singleton(PrivacyGate::class);
     }
 
     /**

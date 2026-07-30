@@ -55,8 +55,7 @@ return new class extends Migration
             $table->decimal('value', 20, 2)->default(0);
 
             /*
-             * NOT NULL with an empty-string default, unlike the nullable
-             * tenant_id on the raw tables.
+             * NOT NULL with an empty-string default.
              *
              * All four supported engines treat NULLs as distinct inside a
              * unique index, so a nullable column here would let two rows

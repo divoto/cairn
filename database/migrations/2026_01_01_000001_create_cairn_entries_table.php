@@ -113,7 +113,11 @@ return new class extends Migration
              */
             $table->unsignedBigInteger('user_id')->nullable();
 
-            $table->string('tenant_id', 64)->nullable();
+            // NOT NULL with an empty-string default, like every other
+            // Cairn table. Tenant scoping is applied as a WHERE comparison on
+            // every read and write, and a NULL would match nothing — a
+            // single-tenant installation would silently report zero.
+            $table->string('tenant_id', 64)->default('');
 
             if ($composite) {
                 $table->primary(['id', 'occurred_at']);

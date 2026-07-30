@@ -61,7 +61,11 @@ return new class extends Migration
             $table->char('country', 2)->nullable();
             $table->unsignedSmallInteger('device_type')->nullable();
 
-            $table->string('tenant_id', 64)->nullable();
+            // NOT NULL with an empty-string default, like every other
+            // Cairn table. Tenant scoping is applied as a WHERE comparison on
+            // every read and write, and a NULL would match nothing — a
+            // single-tenant installation would silently report zero.
+            $table->string('tenant_id', 64)->default('');
 
             // BUILD_PLAN.md gives this table a primary key of `id` alone, but
             // also asks cairn:partition to range-partition it by month.

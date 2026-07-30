@@ -123,17 +123,21 @@ it('gives the driver-specific tables exactly what they need', function (): void 
 
 /*
 |--------------------------------------------------------------------------
-| Uniqueness
+| Tenancy
 |--------------------------------------------------------------------------
 |
-| Every supported engine treats NULLs as distinct inside a unique index, so a
-| nullable tenant_id in one of these keys would silently permit duplicates —
-| and on a single-tenant installation, where every row has no tenant, that
-| means every aggregate double-counts.
+| tenant_id is NOT NULL everywhere, for two reasons that both end in silent
+| wrong numbers:
+|
+| - Every supported engine treats NULLs as distinct inside a unique index, so
+|   a nullable column in one of those keys would permit duplicate aggregate
+|   rows, and a single-tenant installation would double-count everything.
+| - Tenant scoping is applied as a WHERE comparison on every read and write.
+|   A NULL matches nothing, so a single-tenant installation would report zero.
 |
 */
 
-it('never allows a null tenant in a table whose uniqueness depends on it', function (string $table): void {
+it('never allows a null tenant on any table', function (string $table): void {
     $table = Tables::name($table);
 
     $columns = collect(Schema::connection(Tables::connection())->getColumns($table))
@@ -147,7 +151,7 @@ it('never allows a null tenant in a table whose uniqueness depends on it', funct
         "{$table}.tenant_id must be NOT NULL: it sits inside a unique key, ".
         'and every supported engine treats NULLs there as distinct.'
     );
-})->with(['aggregates', 'visitor_days', 'presence']);
+})->with(['entries', 'sessions', 'aggregates', 'visitor_days', 'presence']);
 
 it('rejects a duplicate aggregate row for an untenanted installation', function (): void {
     $connection = Schema::connection(Tables::connection())->getConnection();
