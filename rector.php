@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
 use Rector\Config\RectorConfig;
 use Rector\Set\ValueObject\SetList;
 
@@ -23,4 +24,13 @@ return RectorConfig::configure()
     ->withImportNames(importShortClasses: false, removeUnusedImports: true)
     ->withSkip([
         __DIR__.'/vendor',
+
+        // Pest binds dataset closures to the test instance, so an arrow
+        // function wrapping a static call is NOT interchangeable with a
+        // first-class callable there: binding one raises "Cannot bind an
+        // instance to a static closure" at runtime. The rewrite is not
+        // behaviour-preserving in this context.
+        ArrowFunctionDelegatingCallToFirstClassCallableRector::class => [
+            __DIR__.'/tests',
+        ],
     ]);

@@ -39,3 +39,16 @@ arch('optional integrations stay behind the Integrations namespace')
     ->expect(['Livewire', 'Inertia', 'Laravel\Pulse'])
     ->not->toBeUsed()
     ->ignoring('Divoto\Cairn\Integrations');
+
+arch('contracts are interfaces, so nothing can depend on a concrete driver')
+    ->expect('Divoto\Cairn\Contracts')
+    ->toBeInterfaces();
+
+arch('enums are backed, so their values are stable in the database')
+    ->expect('Divoto\Cairn\Enums')
+    ->toBeEnums();
+
+arch('value objects are readonly')
+    ->expect('Divoto\Cairn\Data')
+    ->toBeReadonly()
+    ->toBeFinal();
