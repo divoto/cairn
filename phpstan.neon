@@ -5,8 +5,6 @@ includes:
 parameters:
     level: 9
 
-    # `database` is added in Phase 2, when the migrations exist.
-    #
     # `config` is deliberately not analysed. Larastan's
     # noEnvCallsOutsideOfConfig rule resolves the config directory against an
     # application base path, so inside a package it flags config/cairn.php —
@@ -15,6 +13,7 @@ parameters:
     # tests/ArchTest.php, which scans src/ directly.
     paths:
         - src
+        - database
         - tests
 
     # Pest's architecture DSL cannot be modelled statically: arch() returns a

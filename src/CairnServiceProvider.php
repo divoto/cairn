@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn;
 
+use Divoto\Cairn\Commands\PartitionCommand;
 use Divoto\Cairn\Consent\GrantingConsentResolver;
 use Divoto\Cairn\Contracts\BotDetector;
 use Divoto\Cairn\Contracts\ConsentResolver;
@@ -43,6 +44,33 @@ final class CairnServiceProvider extends ServiceProvider
      * Absolute path to the packaged configuration file.
      */
     private const CONFIG_PATH = __DIR__.'/../config/cairn.php';
+
+    /**
+     * Absolute path to the packaged migrations.
+     */
+    private const MIGRATIONS_PATH = __DIR__.'/../database/migrations';
+
+    /**
+     * Whether Cairn should run its own migrations from the package.
+     *
+     * Left true, the packaged migrations run on `php artisan migrate` with no
+     * publishing step. A deployer who publishes them in order to customise the
+     * schema must call {@see self::ignoreMigrations()} from their own service
+     * provider, or the same tables would be created twice under two different
+     * migration names.
+     */
+    public static bool $runsMigrations = true;
+
+    /**
+     * Stop Cairn running its packaged migrations.
+     *
+     * Call this from a service provider's `register` method after publishing
+     * the migrations with `--tag=cairn-migrations`.
+     */
+    public static function ignoreMigrations(): void
+    {
+        self::$runsMigrations = false;
+    }
 
     /**
      * Every contract Cairn binds, mapped to the implementation used when the
@@ -97,11 +125,50 @@ final class CairnServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if (self::$runsMigrations) {
+            $this->loadMigrationsFrom(self::MIGRATIONS_PATH);
+        }
+
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 self::CONFIG_PATH => $this->app->configPath('cairn.php'),
             ], 'cairn-config');
+
+            $this->publishMigrations();
+
+            $this->commands([
+                PartitionCommand::class,
+            ]);
         }
+    }
+
+    /**
+     * Register the packaged migrations for publishing.
+     *
+     * Published files are stamped with the time of publishing, following the
+     * convention every Laravel package uses, so that they sort after the host
+     * application's existing migrations.
+     */
+    private function publishMigrations(): void
+    {
+        $migrations = glob(self::MIGRATIONS_PATH.'/*.php') ?: [];
+        sort($migrations);
+
+        $paths = [];
+        $now = time();
+
+        foreach ($migrations as $index => $migration) {
+            // Strip the package's own date prefix and restamp, so published
+            // files sort after whatever the host application already has.
+            // Each gets its own second to preserve the order they ship in.
+            $name = (string) preg_replace('/^\d{4}_\d{2}_\d{2}_\d{6}_/', '', basename($migration));
+
+            $paths[$migration] = $this->app->databasePath(
+                'migrations/'.date('Y_m_d_His', $now + $index).'_'.$name
+            );
+        }
+
+        $this->publishes($paths, 'cairn-migrations');
     }
 
     /**

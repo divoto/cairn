@@ -7,9 +7,9 @@ use Rector\Config\RectorConfig;
 use Rector\Set\ValueObject\SetList;
 
 return RectorConfig::configure()
-    // __DIR__.'/database' joins this list in Phase 2, with the migrations.
     ->withPaths([
         __DIR__.'/config',
+        __DIR__.'/database',
         __DIR__.'/src',
         __DIR__.'/tests',
     ])

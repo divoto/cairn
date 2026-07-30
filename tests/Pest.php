@@ -26,6 +26,22 @@ pest()->extend(TestCase::class)->in(__DIR__);
 */
 
 /**
+ * Read a binary column back as a PHP string.
+ *
+ * PostgreSQL hands `bytea` back as a stream resource while MySQL, MariaDB and
+ * SQLite return a string. A test that assumed either would pass on three
+ * engines and fail on the fourth.
+ */
+function binaryValue(mixed $value): string
+{
+    if (is_resource($value)) {
+        return (string) stream_get_contents($value);
+    }
+
+    return is_string($value) ? $value : '';
+}
+
+/**
  * Build an entry with sensible defaults, overriding only what a test cares
  * about.
  *
