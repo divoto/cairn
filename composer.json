@@ -70,7 +70,8 @@
         "format": "pint",
         "format:check": "pint --test",
         "rector": "rector process",
-        "rector:check": "rector process --dry-run"
+        "rector:check": "rector process --dry-run",
+        "assets:minify": "npx --yes terser@5 resources/js/cairn.js --compress passes=3 --mangle --format quote_style=1 -o resources/dist/cairn.min.js"
     },
     "config": {
         "sort-packages": true,

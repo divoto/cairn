@@ -45,6 +45,7 @@ use Divoto\Cairn\Presence\RedisPresence;
 use Divoto\Cairn\Privacy\IpAnonymiser;
 use Divoto\Cairn\Privacy\OptOut;
 use Divoto\Cairn\Privacy\PrivacyGate;
+use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Recording\EntryFactory;
 use Divoto\Cairn\Storage\DatabaseStorage;
@@ -60,6 +61,7 @@ use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Contracts\Routing\Registrar;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\View\Compilers\BladeCompiler;
 
 /**
  * The single service provider for the Cairn package.
@@ -99,6 +101,16 @@ final class CairnServiceProvider extends ServiceProvider
      * Absolute path to the dashboard routes.
      */
     private const ROUTES_PATH = __DIR__.'/../routes/dashboard.php';
+
+    /**
+     * Absolute path to the beacon's route.
+     */
+    private const COLLECT_ROUTES_PATH = __DIR__.'/../routes/collect.php';
+
+    /**
+     * Absolute path to the beacon source and its minified build.
+     */
+    private const JS_PATH = __DIR__.'/../resources/js';
 
     /**
      * Absolute path to the publishable stubs.
@@ -285,6 +297,7 @@ final class CairnServiceProvider extends ServiceProvider
         $this->registerMiddleware();
         $this->registerGate();
         $this->registerDashboard();
+        $this->registerBeacon();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -305,6 +318,43 @@ final class CairnServiceProvider extends ServiceProvider
 
             $this->registerSchedule();
         }
+    }
+
+    /**
+     * Register the beacon's endpoint and its Blade directive.
+     *
+     * The endpoint is public where the dashboard is gated, which is why it
+     * validates as strictly as it does — see CollectController.
+     */
+    private function registerBeacon(): void
+    {
+        $config = $this->app->make(Repository::class);
+
+        // The directive is always defined, so a template using @cairn does not
+        // break when the beacon is switched off — it simply renders nothing.
+        $this->app->make(BladeCompiler::class)->directive(
+            'cairn',
+            static fn (): string => "<?php echo \Divoto\Cairn\Support\Beacon::tag(); ?>",
+        );
+
+        if ($config->get('cairn.enabled') !== true) {
+            return;
+        }
+
+        if ($config->get('cairn.recorders.'.ClientMetrics::class.'.enabled') === false) {
+            return;
+        }
+
+        $middleware = $config->get('cairn.dashboard.middleware');
+        $path = $config->get('cairn.dashboard.path');
+
+        $this->app->make(Registrar::class)->group([
+            'prefix' => is_string($path) && $path !== '' ? $path : 'cairn',
+            'middleware' => is_array($middleware) ? $middleware : ['web'],
+            'as' => 'cairn.',
+        ], function (): void {
+            $this->loadRoutesFrom(self::COLLECT_ROUTES_PATH);
+        });
     }
 
     /**
@@ -343,6 +393,7 @@ final class CairnServiceProvider extends ServiceProvider
 
             $this->publishes([
                 self::ASSETS_PATH => $this->app->publicPath('vendor/cairn'),
+                self::JS_PATH => $this->app->publicPath('vendor/cairn/src'),
             ], 'cairn-assets');
 
             // A privacy-notice template and an opt-out controller. Both are

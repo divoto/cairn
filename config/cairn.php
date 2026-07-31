@@ -287,7 +287,20 @@ return [
         ],
 
         ClientMetrics::class => [
+            // The optional JavaScript beacon. It measures the handful of
+            // things a server cannot see — time actually spent on a page,
+            // scroll depth, viewport bucket, Core Web Vitals.
+            //
+            // The dashboard is fully functional without it: widgets that
+            // depend on these render an explanatory empty state rather than a
+            // misleading zero. Turning it off means one fewer script on your
+            // pages and one fewer endpoint accepting input from browsers.
             'enabled' => true,
+
+            // Emit the <script> tag automatically on Blade responses. With
+            // this false you can still place it yourself with the @cairn
+            // directive — useful if you want it only on some pages.
+            'auto_inject' => false,
         ],
 
         Conversions::class => [
