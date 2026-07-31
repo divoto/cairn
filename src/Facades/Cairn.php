@@ -8,6 +8,7 @@ use Divoto\Cairn\Cairn as CairnManager;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\DeclineReason;
 use Divoto\Cairn\Identity\SessionResolver;
+use Divoto\Cairn\Reporting\Report;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
 
@@ -28,6 +29,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static int digest()
  * @method static void touch(Request $request, ?string $page = null)
  * @method static DeclineReason|null decide(Request $request)
+ * @method static Report report()
  * @method static SessionResolver sessions()
  *
  * @see CairnManager

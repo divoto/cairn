@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
+use Divoto\Cairn\Contracts\TenantResolver;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\DeclineReason;
@@ -16,6 +17,7 @@ use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Recording\EntryFactory;
+use Divoto\Cairn\Reporting\Report;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Throwable;
@@ -45,6 +47,7 @@ final class Cairn
         private readonly UniqueCounter $uniques,
         private readonly Presence $presence,
         private readonly SessionResolver $sessions,
+        private readonly TenantResolver $tenants,
     ) {}
 
     /**
@@ -165,6 +168,22 @@ final class Cairn
     public function decide(Request $request): ?DeclineReason
     {
         return $this->gate->decide($request, $this->sampleRate(), PageViews::class);
+    }
+
+    /**
+     * Start a report.
+     *
+     * Returns a fresh builder every time, so two widgets on the same page
+     * cannot contaminate each other's filters.
+     */
+    public function report(): Report
+    {
+        return new Report(
+            $this->storage,
+            $this->uniques,
+            $this->presence,
+            $this->tenants,
+        );
     }
 
     /**

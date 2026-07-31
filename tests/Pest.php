@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use Divoto\Cairn\Data\Entry;
+use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Tests\TestCase;
+use Illuminate\Support\Collection;
 use Pest\Support\HigherOrderTapProxy;
 
 /*
@@ -63,6 +65,26 @@ function binaryValue(mixed $value): string
     }
 
     return is_string($value) ? $value : '';
+}
+
+/**
+ * The nth row of a report, asserted to exist.
+ *
+ * Collection offsets are nullable to a static analyser, and a test that
+ * silently skipped its assertions on a null row would be worse than one that
+ * failed loudly.
+ *
+ * @param  Collection<int, ReportRow>  $rows
+ */
+function row(Collection $rows, int $index = 0): ReportRow
+{
+    $row = $rows->get($index);
+
+    if (! $row instanceof ReportRow) {
+        throw new RuntimeException("Report has no row at index {$index}.");
+    }
+
+    return $row;
 }
 
 /**
