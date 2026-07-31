@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn;
 
+use Divoto\Cairn\Cairn as CairnManager;
 use Divoto\Cairn\Commands\PartitionCommand;
 use Divoto\Cairn\Consent\GrantingConsentResolver;
 use Divoto\Cairn\Contracts\BotDetector;
@@ -18,9 +19,10 @@ use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Counting\DatabaseUniqueCounter;
 use Divoto\Cairn\Counting\NullUniqueCounter;
 use Divoto\Cairn\Counting\RedisUniqueCounter;
-use Divoto\Cairn\Detection\NullBotDetector;
-use Divoto\Cairn\Detection\NullDeviceDetector;
+use Divoto\Cairn\Detection\UserAgentBotDetector;
+use Divoto\Cairn\Detection\UserAgentDeviceDetector;
 use Divoto\Cairn\Geo\NullGeoResolver;
+use Divoto\Cairn\Http\Middleware\TrackPageView;
 use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Identity\VisitorHasher;
 use Divoto\Cairn\Ingest\DatabaseIngest;
@@ -31,11 +33,16 @@ use Divoto\Cairn\Presence\NullPresence;
 use Divoto\Cairn\Presence\RedisPresence;
 use Divoto\Cairn\Privacy\IpAnonymiser;
 use Divoto\Cairn\Privacy\PrivacyGate;
+use Divoto\Cairn\Recorders\PageViews;
+use Divoto\Cairn\Recording\EntryFactory;
 use Divoto\Cairn\Storage\DatabaseStorage;
 use Divoto\Cairn\Storage\NullStorage;
+use Divoto\Cairn\Support\ChannelClassifier;
+use Divoto\Cairn\Support\RouteNameGrouper;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -101,8 +108,8 @@ final class CairnServiceProvider extends ServiceProvider
         UniqueCounter::class => NullUniqueCounter::class,
         Presence::class => NullPresence::class,
         GeoResolver::class => NullGeoResolver::class,
-        BotDetector::class => NullBotDetector::class,
-        DeviceDetector::class => NullDeviceDetector::class,
+        BotDetector::class => UserAgentBotDetector::class,
+        DeviceDetector::class => UserAgentDeviceDetector::class,
         TenantResolver::class => NullTenantResolver::class,
         ConsentResolver::class => GrantingConsentResolver::class,
     ];
@@ -181,6 +188,38 @@ final class CairnServiceProvider extends ServiceProvider
         $this->app->singleton(SessionResolver::class);
         $this->app->singleton(IpAnonymiser::class);
         $this->app->singleton(PrivacyGate::class);
+        $this->app->singleton(ChannelClassifier::class);
+        $this->app->singleton(RouteNameGrouper::class);
+        $this->app->singleton(EntryFactory::class);
+        $this->app->singleton(CairnManager::class);
+    }
+
+    /**
+     * Register the pageview middleware on the web group.
+     *
+     * Pushed rather than prepended, so it wraps as little as possible, and
+     * registered only when the recorder is enabled. It records from
+     * `terminate()`, so its position in the stack costs the visitor nothing.
+     */
+    private function registerMiddleware(): void
+    {
+        if ($this->app->make(Repository::class)->get('cairn.enabled') !== true) {
+            return;
+        }
+
+        if ($this->app->make(Repository::class)->get('cairn.recorders.'.PageViews::class.'.enabled') === false) {
+            return;
+        }
+
+        if (! $this->app->bound(Kernel::class)) {
+            return;
+        }
+
+        $kernel = $this->app->make(Kernel::class);
+
+        if ($kernel instanceof \Illuminate\Foundation\Http\Kernel) {
+            $kernel->appendMiddlewareToGroup('web', TrackPageView::class);
+        }
     }
 
     /**
@@ -194,6 +233,8 @@ final class CairnServiceProvider extends ServiceProvider
         if (self::$runsMigrations) {
             $this->loadMigrationsFrom(self::MIGRATIONS_PATH);
         }
+
+        $this->registerMiddleware();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([

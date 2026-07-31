@@ -49,6 +49,9 @@ abstract class TestCase extends Orchestra
             ]);
         }
 
+        // The web middleware group encrypts cookies, which needs a key.
+        $config->set('app.key', 'base64:Y2Fpcm4tdGVzdC1rZXktMzItYnl0ZXMtZXhhY3RseSE=');
+
         // The driver-parity suite exercises the Redis drivers against a real
         // server. A conditionally-skipped driver is a driver nobody notices
         // breaking, so this is configured rather than optional.
