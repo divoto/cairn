@@ -12,7 +12,14 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\TenantResolver;
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Counting\DatabaseUniqueCounter;
+use Divoto\Cairn\Counting\RedisUniqueCounter;
+use Divoto\Cairn\Ingest\DatabaseIngest;
 use Divoto\Cairn\Ingest\NullIngest;
+use Divoto\Cairn\Ingest\RedisIngest;
+use Divoto\Cairn\Presence\DatabasePresence;
+use Divoto\Cairn\Presence\RedisPresence;
+use Divoto\Cairn\Storage\DatabaseStorage;
 use Divoto\Cairn\Storage\NullStorage;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
 
@@ -42,9 +49,30 @@ it('resolves each contract as a singleton', function (string $contract): void {
     expect(app($contract))->toBe(app($contract));
 })->with($contracts);
 
-it('falls back to no-op implementations while no drivers exist', function (): void {
-    expect(app(Ingest::class))->toBeInstanceOf(NullIngest::class)
-        ->and(app(Storage::class))->toBeInstanceOf(NullStorage::class);
+it('resolves the database drivers by default', function (): void {
+    expect(app(Ingest::class))->toBeInstanceOf(DatabaseIngest::class)
+        ->and(app(Storage::class))->toBeInstanceOf(DatabaseStorage::class)
+        ->and(app(UniqueCounter::class))->toBeInstanceOf(DatabaseUniqueCounter::class)
+        ->and(app(Presence::class))->toBeInstanceOf(DatabasePresence::class);
+});
+
+it('resolves the Redis drivers when configured', function (): void {
+    config()->set('cairn.driver', 'redis');
+
+    expect(app(Ingest::class))->toBeInstanceOf(RedisIngest::class)
+        ->and(app(UniqueCounter::class))->toBeInstanceOf(RedisUniqueCounter::class)
+        ->and(app(Presence::class))->toBeInstanceOf(RedisPresence::class);
+});
+
+/**
+ * `cairn.driver` selects where entries are buffered, counted and tracked —
+ * not where they are durably stored. There is one storage driver in v1, and
+ * choosing Redis must not silently change what the permanent record is.
+ */
+it('keeps storage on the database whichever driver is chosen', function (): void {
+    config()->set('cairn.driver', 'redis');
+
+    expect(app(Storage::class))->toBeInstanceOf(DatabaseStorage::class);
 });
 
 it('binds the no-op drivers when Cairn is disabled', function (): void {

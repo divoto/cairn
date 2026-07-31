@@ -49,6 +49,19 @@ abstract class TestCase extends Orchestra
             ]);
         }
 
+        // The driver-parity suite exercises the Redis drivers against a real
+        // server. A conditionally-skipped driver is a driver nobody notices
+        // breaking, so this is configured rather than optional.
+        $config->set('database.redis.client', 'phpredis');
+        $config->set('database.redis.default', [
+            'host' => getenv('REDIS_HOST') ?: '127.0.0.1',
+            'port' => (int) (getenv('REDIS_PORT') ?: 6379),
+            'password' => getenv('REDIS_PASSWORD') ?: null,
+            // A high database number, so a developer running the suite against
+            // a shared Redis does not flush their application's keys.
+            'database' => (int) (getenv('REDIS_DB') ?: 15),
+        ]);
+
         $config->set('cairn.enabled', true);
     }
 }

@@ -15,16 +15,23 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\TenantResolver;
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Counting\DatabaseUniqueCounter;
 use Divoto\Cairn\Counting\NullUniqueCounter;
+use Divoto\Cairn\Counting\RedisUniqueCounter;
 use Divoto\Cairn\Detection\NullBotDetector;
 use Divoto\Cairn\Detection\NullDeviceDetector;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Identity\VisitorHasher;
+use Divoto\Cairn\Ingest\DatabaseIngest;
 use Divoto\Cairn\Ingest\NullIngest;
+use Divoto\Cairn\Ingest\RedisIngest;
+use Divoto\Cairn\Presence\DatabasePresence;
 use Divoto\Cairn\Presence\NullPresence;
+use Divoto\Cairn\Presence\RedisPresence;
 use Divoto\Cairn\Privacy\IpAnonymiser;
 use Divoto\Cairn\Privacy\PrivacyGate;
+use Divoto\Cairn\Storage\DatabaseStorage;
 use Divoto\Cairn\Storage\NullStorage;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
@@ -98,6 +105,35 @@ final class CairnServiceProvider extends ServiceProvider
         DeviceDetector::class => NullDeviceDetector::class,
         TenantResolver::class => NullTenantResolver::class,
         ConsentResolver::class => GrantingConsentResolver::class,
+    ];
+
+    /**
+     * Implementations selected by `cairn.driver`, per capability.
+     *
+     * A capability with no entry for the configured driver falls back to its
+     * no-op. Storage is deliberately database-only: `cairn.driver` selects
+     * where entries are *buffered*, counted and tracked, not where they are
+     * durably stored, and there is one storage driver in v1.
+     *
+     * @var array<class-string, array<string, class-string>>
+     */
+    private const DRIVERS = [
+        Ingest::class => [
+            'database' => DatabaseIngest::class,
+            'redis' => RedisIngest::class,
+        ],
+        Storage::class => [
+            'database' => DatabaseStorage::class,
+            'redis' => DatabaseStorage::class,
+        ],
+        UniqueCounter::class => [
+            'database' => DatabaseUniqueCounter::class,
+            'redis' => RedisUniqueCounter::class,
+        ],
+        Presence::class => [
+            'database' => DatabasePresence::class,
+            'redis' => RedisPresence::class,
+        ],
     ];
 
     /**
@@ -258,8 +294,12 @@ final class CairnServiceProvider extends ServiceProvider
                 : $fallback;
         }
 
-        // Driver-selected contracts have no alternative implementation yet.
-        // Phase 4 resolves `cairn.driver` to a class here.
-        return $fallback;
+        $driver = $config->get('cairn.driver');
+
+        if (! is_string($driver)) {
+            return $fallback;
+        }
+
+        return self::DRIVERS[$contract][$driver] ?? $fallback;
     }
 }
