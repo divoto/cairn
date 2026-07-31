@@ -5,64 +5,252 @@
 > Every visitor adds a stone. Nobody leaves a name.
 
 Cairn is a single Composer package that gives a Laravel application cookieless
-pageview, session and event tracking plus a built-in dashboard — without sending
-anything to a third party, and without requiring a cookie-consent banner in its
-default configuration.
+pageview, session and event tracking plus a built-in dashboard — without
+sending anything to a third party, and without needing a cookie-consent banner
+in its default configuration.
 
-Because it lives inside your application rather than in a browser tag, Cairn can
+Because it runs inside your application rather than in a browser tag, it can
 report on things an external tool cannot see: route names, Eloquent models, and
 authenticated users.
 
+```bash
+composer require divoto/cairn
+php artisan migrate
+```
+
+That is the whole install. Visit `/cairn`.
+
 ---
 
-> **Status: in development.** This README is a stub. The full documentation —
-> installation, the privacy model, the driver matrix, an honest account of what
-> cookieless measurement costs you, and a comparison with Matomo and GA4 —
-> lands with the first tagged release. Do not depend on this package yet.
+## The honest trade-off
 
----
+Cairn identifies visitors with a salted hash that is **regenerated from new
+random bytes every 24 hours**. The old salt is destroyed, so yesterday's hashes
+cannot be recomputed by anyone — including Cairn.
+
+That single decision is where everything else follows from, in both directions.
+
+| What you give up | What you get |
+| --- | --- |
+| **Returning visitors.** Somebody who visits on three days counts as three visitors. There is no way to know otherwise. | **No cookie banner in the default configuration.** Nothing is stored on the visitor's device. |
+| **Multi-day journeys.** No "they read the blog on Monday and bought on Friday". | **No IP address in your database, logs or backups.** It exists in memory for one lookup, then it is gone. |
+| **Multi-touch attribution.** Last-click only, because there is no earlier touch to attribute to. | **A breach of your analytics table leaks counts, not people.** |
+| **Unique counts inflated over long ranges.** A month is the sum of its days. | **Route names, not URLs.** `/orders/8814/invoice` and `/orders/9921/invoice` are one page. |
+| **Cross-device anything.** | **Eloquent models as first-class subjects.** `$article->trackView()`. |
+| **Exact time-on-page and scroll depth** unless you enable the optional beacon. | **Nothing blocks the response.** Recording happens after the page is sent. |
+
+If returning-visitor counts are essential to your work, Cairn is the wrong tool
+and you should use something that sets a cookie and asks for consent. It will
+do that job better.
+
+## What it looks like
+
+The dashboard is server-rendered Blade. It reads entirely without JavaScript —
+filters are links, the chart is inline SVG computed on the server, and every
+chart has a table underneath it. Dark mode follows your system.
+
+```
+Overview                                        Last 30 days
+  Visitors ~1,284      Pageviews 4,109      Sessions 1,502      Bounce rate 61.2%
+       ↑ 12.4%             ↑ 8.1%              ↑ 9.9%              ↓ 3.1%
+
+  Top routes                          Referrers
+  ─────────────────────────────       ────────────────────────────
+  pricing.index            1,204      google.com                412
+  docs.show                  918      news.ycombinator.com      288
+  orders.invoice             455      github.com                 96
+```
+
+The `~` on visitors is not decoration. It marks a number Cairn knows is an
+overcount, for the reason in the table above.
 
 ## Requirements
 
 - PHP 8.2+
 - Laravel 12 or 13
-- MySQL 8+, MariaDB 10.6+ or PostgreSQL 13+
+- MySQL 8+, MariaDB 10.6+, or PostgreSQL 13+
 
-Redis is optional and always will be. Every Redis-backed capability has a
-database-backed driver of equal correctness, so Cairn runs on a shared host with
-MySQL and nothing else.
+**Redis is optional and always will be.** Every Redis-backed capability has a
+database-backed driver of equal correctness, tested against the same suite.
+Cairn runs on shared hosting with MySQL and nothing else.
 
-There is no build step. The dashboard ships as Blade with pre-built assets — you
-never need npm, Vite or Node to install or use Cairn.
+**There is no build step.** No npm, no Vite, no Node. The dashboard's CSS is
+~8KB, hand-written, and inlined.
 
-## Installation
+## Driver matrix
 
-```bash
-composer require divoto/cairn
+| Capability | `database` (default) | `redis` |
+| --- | --- | --- |
+| Ingest | In-memory buffer, flushed after the response | List drained by `cairn:work` |
+| Unique counting | Exact, one row per visitor per day | HyperLogLog, ~0.81% error |
+| Presence | Table with a 5-minute window | Sorted set, self-expiring |
+| Storage | The only storage driver in v1 | (uses the database driver) |
+
+Both drivers are covered by one shared test suite — 44 assertions run
+identically against each. A behavioural difference between them is a bug.
+
+## Recording things yourself
+
+```php
+use Divoto\Cairn\Facades\Cairn;
+
+Cairn::event('signed_up', ['plan' => 'pro']);
+Cairn::conversion('purchase', 49.99);
+Cairn::ignore('admin/*');           // for the rest of this request
 ```
 
-## Design commitments
+On a model:
 
-These are product-defining, not implementation details:
+```php
+use Divoto\Cairn\Concerns\HasAnalytics;
 
-- **Raw IP addresses are never persisted.** An IP exists in memory only long
-  enough to derive a visitor hash and perform a geo lookup.
-- **No cookies in the default configuration.** Visitor identity is a salted
-  hash. Cairn never writes `Set-Cookie` and never touches the Laravel session.
-- **The visitor salt rotates every 24 hours and is never written to disk.**
-  Cross-day visitor identity is impossible by construction — and Cairn will not
-  add features that reconstruct it.
-- **Do Not Track and `Sec-GPC` are honoured by default**, alongside a per-user
-  opt-out and a consent-resolver hook.
-- **Nothing blocks the response.** Recording happens in a `terminating`
-  callback. If Cairn's storage is down, your application still serves requests.
-- **Personal-data features are opt-in and loudly documented.** Authenticated
-  user attribution and durable-cookie identity are both off by default.
+class Article extends Model
+{
+    use HasAnalytics;
+}
 
-Cairn is described as privacy-first and cookieless by default. It does not claim
-to make your deployment compliant with any particular regulation — compliance is
-a property of how you deploy and configure software, not of a library, and
-nothing in this package or its documentation is legal advice.
+$article->trackView();
+$article->trackEvent('shared', ['network' => 'mastodon']);
+```
+
+## Reading the numbers
+
+Every surface — the dashboard, the API, the Pulse cards, CSV export — goes
+through one query layer, so they cannot disagree.
+
+```php
+use Divoto\Cairn\Enums\{Comparison, Dimension, Metric};
+
+Cairn::report()
+    ->lastDays(30)
+    ->metrics(Metric::Visitors, Metric::Pageviews, Metric::BounceRate)
+    ->groupBy(Dimension::Route)
+    ->compare(Comparison::PreviousPeriod)
+    ->orderByDesc(Metric::Pageviews)
+    ->limit(20)
+    ->get();
+```
+
+Derived metrics are recomputed from their stored components at the level they
+are shown at. A week's bounce rate is that week's bounces over that week's
+sessions — never the average of seven daily rates, which is a different and
+wrong number.
+
+Asking for something that was never rolled up throws, naming the combination.
+Cairn will not silently fall back to scanning raw entries.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `cairn:rollup` | Recompute aggregates for a window. Idempotent. |
+| `cairn:prune` | Enforce retention. Drops partitions where available. |
+| `cairn:work` | Drain the Redis ingest queue (redis driver only). |
+| `cairn:partition` | Convert raw tables to monthly partitions (MySQL/MariaDB). |
+| `cairn:doctor` | Report what this installation stores and exposes. |
+| `cairn:forget` | Erase a visitor or user, and rebuild affected rollups. |
+| `cairn:export` | Export everything held about a subject, as JSON. |
+
+Rollup and prune are scheduled automatically, and skipped if you have already
+scheduled them yourself. On hosts with no cron at all, a small fraction of
+requests carry the work instead.
+
+Start with `cairn:doctor`.
+
+## Compared with Matomo and GA4
+
+Honest version: **Matomo and GA4 will tell you more about individual people
+than Cairn can.** That is the difference, and it is deliberate.
+
+| | Cairn | Matomo (self-hosted) | GA4 |
+| --- | --- | --- | --- |
+| Where data lives | Your database | Your server | Google |
+| Cookies by default | None | Yes | Yes |
+| IP stored | Never | Optional, on by default | Yes |
+| Returning visitors | **Not possible** | Yes | Yes |
+| Funnels, cohorts, session replay | **No** | Yes | Partly |
+| Route names | Yes | No | No |
+| Eloquent models | Yes | No | No |
+| Install | `composer require` | Separate application | JS tag |
+| Runtime cost | One buffered insert after the response | Separate app + database | Third-party request per page |
+
+Cairn is not trying to replace Matomo's feature set. It is trying to answer
+"which pages matter and where do people come from" without collecting anything
+it would rather not hold.
+
+## What Cairn deliberately does not do
+
+Not "not yet" — these are decisions.
+
+- **Follow anyone across days.** Not through fingerprint stitching, fallback
+  identifiers, or "probably the same visitor" heuristics.
+- **Store an IP address**, in any table, log, cache entry, exception message or
+  queue payload.
+- **Funnels, cohort analysis, heatmaps, session replay, A/B testing,
+  attribution beyond last click.** Most of these need cross-day identity, which
+  does not exist here.
+- **Behavioural bot detection.** That means profiling visitors.
+- **Request high-entropy client hints.** Cairn reads the low-entropy ones the
+  browser volunteers and asks for nothing more.
+- **Scan raw entries from the dashboard.** Ever.
+- **Tell you whether you are compliant with anything.** See below.
+
+## On compliance
+
+Cairn is **privacy-first** and **cookieless by default**, and in its default
+configuration it stores no personal data and needs no consent banner.
+
+It does not and cannot tell you that your deployment complies with GDPR or any
+other regulation. Compliance is a property of how software is deployed,
+configured and operated — not of a library. Nothing in this package or its
+documentation is legal advice.
+
+Two settings change what Cairn stores, and both are off by default with the
+consequences spelled out in `config/cairn.php`:
+
+- `privacy.track_user_id` — attributes entries to the signed-in user, making
+  the data personal data.
+- `privacy.durable_identity` — replaces the rotating hash with a cookie,
+  reversing the central design decision.
+
+`cairn:doctor` reports on both, along with anything else worth knowing.
+
+## Configuration
+
+```bash
+php artisan vendor:publish --tag=cairn-config
+```
+
+Every option is commented. The two above carry a longer explanation of what
+they change.
+
+Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
+`cairn-assets`, `cairn-privacy`.
+
+## Dashboard access
+
+Guarded by a `viewCairn` gate that, exactly like Telescope and Pulse, **denies
+everybody outside the local environment** until you define it:
+
+```php
+Gate::define('viewCairn', fn ($user) => $user?->isAdmin() ?? false);
+```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The privacy invariants are not
+negotiable, and a contribution that weakens one will be declined however well
+written it is.
+
+Redis is required to run the test suite — not to use Cairn, but because the
+driver-parity tests exercise both drivers against a real server rather than
+skipping one.
+
+## Status
+
+**Pre-release.** The API may change before `1.0.0`. The version number is a
+promise about stability, and that promise will not be made until Cairn has run
+in production somewhere for a meaningful period.
 
 ## License
 

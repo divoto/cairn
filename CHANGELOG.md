@@ -13,6 +13,42 @@ until the package has run in production for a meaningful period.
 
 ### Added
 
+- **Recording.** Cookieless pageview, session, event and conversion tracking.
+  A `TrackPageView` middleware records from `terminate()`, so nothing runs
+  before the response. `Cairn::event()`, `Cairn::conversion()` and a
+  `HasAnalytics` trait for Eloquent models.
+- **Identity.** `VisitorHasher` derives an HMAC-SHA256 visitor hash from a
+  32-byte salt that lives only in the cache and rotates every 24 hours. Salt
+  rotation is clamped to at most 24 hours: configuration may tighten it, never
+  loosen it.
+- **The privacy gate.** Do Not Track, Global Privacy Control, a per-visitor
+  opt-out and a consent resolver are all evaluated before bot detection,
+  ignore rules and sampling, so no configuration can record against a
+  visitor's expressed wish. Prefetches are declined.
+- **Drivers.** Database and Redis families for ingest, unique counting and
+  presence, covered by one shared test suite — 44 assertions run identically
+  against both.
+- **Schema.** Five tables, portable across MySQL, MariaDB, PostgreSQL and
+  SQLite, with no column anywhere that can hold an IP address. Optional
+  monthly partitioning via `cairn:partition`.
+- **Rollups.** `cairn:rollup` rebuilds a window rather than incrementing it,
+  making it both idempotent and a repair path. `cairn:prune` drops partitions
+  where available. Both are scheduled automatically, and skipped if already
+  scheduled by the application.
+- **The report builder.** One query layer for every surface. Derived metrics
+  are recomputed from their stored components at the level they are displayed
+  at; combinations that were never materialised throw rather than silently
+  scanning raw entries.
+- **The dashboard.** Server-rendered Blade at `/cairn`, behind a `viewCairn`
+  gate that denies everybody outside the local environment by default. Fully
+  readable with JavaScript disabled, dark mode, every chart backed by a table.
+  Fifteen widgets, extensible in one class.
+- **Data-subject tooling.** `cairn:forget` erases a subject and rebuilds the
+  aggregates their rows contributed to. `cairn:export` produces a subject
+  access request as JSON. `cairn:doctor` reports what an installation stores
+  and exposes, without asserting any legal conclusion. Publishable
+  privacy-notice template and opt-out controller stub.
+
 - Repository scaffold: Composer package definition, PSR-4 autoloading, package
   discovery, and the `cairn-config` publish tag.
 - Quality gates: Laravel Pint (`laravel` preset), PHPStan level 9 via Larastan
