@@ -34,6 +34,16 @@ jobs:
           - laravel: '13'
             testbench: '^11.0'
 
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +51,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite, redis
           coverage: none
 
       - name: Pin Laravel ${{ matrix.laravel }}
@@ -66,6 +76,9 @@ jobs:
           composer-options: --prefer-dist --no-interaction
 
       - name: Run tests
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
         run: vendor/bin/pest --ci
 
   databases:
@@ -127,6 +140,15 @@ jobs:
           --health-timeout=5s
           --health-retries=10
 
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -134,7 +156,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite, pdo_mysql, pdo_pgsql
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite, pdo_mysql, pdo_pgsql, redis
           coverage: none
 
       - name: Install dependencies
@@ -150,11 +172,23 @@ jobs:
           DB_DATABASE: cairn
           DB_USERNAME: root
           DB_PASSWORD: cairn
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
         run: vendor/bin/pest --ci
 
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
 
     steps:
       - uses: actions/checkout@v4
@@ -163,7 +197,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite, redis
           coverage: xdebug
 
       - name: Install dependencies
@@ -173,4 +207,7 @@ jobs:
 
       # CLAUDE.md: target 90%+ line coverage on src/.
       - name: Run tests with coverage
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
         run: vendor/bin/pest --ci --coverage --min=90

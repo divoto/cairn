@@ -48,6 +48,16 @@ cd cairn
 composer install
 ```
 
+**Redis is required to run the suite.** Not to use Cairn — Redis is optional
+there and always will be — but the driver-parity tests exercise the Redis
+drivers against a real server rather than skipping them, because a
+conditionally-skipped driver is a driver nobody notices breaking. Any local
+Redis will do; the suite uses database 15 so it will not touch your own keys.
+
+```bash
+REDIS_HOST=127.0.0.1 REDIS_PORT=6379 composer test
+```
+
 ## Before you open a pull request
 
 All three must be green:
