@@ -39,44 +39,48 @@ final class Buckets
     }
 
     /**
-     * The start of the bucket after this one.
+     * The start of the bucket after the one containing this instant.
      *
      * Uses calendar arithmetic rather than adding a fixed number of seconds:
      * days vary across daylight-saving transitions and months vary by
      * definition, so multiplication would drift.
+     *
+     * The instant is aligned before stepping, which matters more than it
+     * looks: `2026-01-31` plus one month overflows to March, so a caller
+     * passing an unaligned date would skip February entirely. Aligning first
+     * makes the step total — every input lands on the next real bucket.
      */
     public static function next(CarbonImmutable $bucket, Period $period): CarbonImmutable
     {
+        $aligned = self::align($bucket, $period);
+
         return match ($period) {
-            Period::Hour => $bucket->addHour(),
-            Period::Day => $bucket->addDay(),
-            Period::Month => $bucket->addMonth(),
+            Period::Hour => $aligned->addHour(),
+            Period::Day => $aligned->addDay(),
+            Period::Month => $aligned->addMonth(),
         };
     }
 
     /**
-     * Every bucket start from `$from` up to but not including `$to`.
+     * Every bucket from the one containing `$from` to the one containing
+     * `$to`, inclusive at both ends.
      *
-     * Both ends are aligned first, so passing "now" and "an hour ago" still
-     * produces whole buckets.
+     * Inclusive because that is what a caller means: `--from=2026-03-01
+     * --to=2026-03-31` is a request to rebuild March, and an exclusive end
+     * would silently drop the 31st. It also means a window inside a single
+     * bucket still rebuilds that bucket, rather than doing nothing — rolling
+     * up "today" before midnight must not write nothing.
      *
      * @return list<CarbonImmutable>
      */
     public static function between(CarbonImmutable $from, CarbonImmutable $to, Period $period): array
     {
         $cursor = self::align($from, $period);
-        $end = self::align($to, $period);
-
-        // A window inside a single bucket still rolls that bucket up, rather
-        // than doing nothing — otherwise rolling up "today" before midnight
-        // would silently write nothing.
-        if ($cursor->equalTo($end)) {
-            return [$cursor];
-        }
+        $last = self::align($to, $period);
 
         $buckets = [];
 
-        while ($cursor->lessThan($end)) {
+        while ($cursor->lessThanOrEqualTo($last)) {
             $buckets[] = $cursor;
             $cursor = self::next($cursor, $period);
         }

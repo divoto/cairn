@@ -6,6 +6,9 @@ namespace Divoto\Cairn;
 
 use Divoto\Cairn\Cairn as CairnManager;
 use Divoto\Cairn\Commands\PartitionCommand;
+use Divoto\Cairn\Commands\PruneCommand;
+use Divoto\Cairn\Commands\RollupCommand;
+use Divoto\Cairn\Commands\WorkCommand;
 use Divoto\Cairn\Consent\GrantingConsentResolver;
 use Divoto\Cairn\Contracts\BotDetector;
 use Divoto\Cairn\Contracts\ConsentResolver;
@@ -28,6 +31,8 @@ use Divoto\Cairn\Identity\VisitorHasher;
 use Divoto\Cairn\Ingest\DatabaseIngest;
 use Divoto\Cairn\Ingest\NullIngest;
 use Divoto\Cairn\Ingest\RedisIngest;
+use Divoto\Cairn\Maintenance\Maintenance;
+use Divoto\Cairn\Maintenance\Pruner;
 use Divoto\Cairn\Presence\DatabasePresence;
 use Divoto\Cairn\Presence\NullPresence;
 use Divoto\Cairn\Presence\RedisPresence;
@@ -40,6 +45,7 @@ use Divoto\Cairn\Storage\NullStorage;
 use Divoto\Cairn\Support\ChannelClassifier;
 use Divoto\Cairn\Support\RouteNameGrouper;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
@@ -198,6 +204,8 @@ final class CairnServiceProvider extends ServiceProvider
         // different instances and the request timer is silently lost — which
         // is exactly what happened the first time Cairn recorded real traffic.
         $this->app->singleton(TrackPageView::class);
+        $this->app->singleton(Pruner::class);
+        $this->app->singleton(Maintenance::class);
     }
 
     /**
@@ -251,8 +259,61 @@ final class CairnServiceProvider extends ServiceProvider
 
             $this->commands([
                 PartitionCommand::class,
+                PruneCommand::class,
+                RollupCommand::class,
+                WorkCommand::class,
             ]);
+
+            $this->registerSchedule();
         }
+    }
+
+    /**
+     * Schedule Cairn's own maintenance.
+     *
+     * Registered only when the deployer has not already scheduled these
+     * commands themselves — otherwise a user following the documentation and
+     * adding them to their own schedule would silently run everything twice.
+     */
+    private function registerSchedule(): void
+    {
+        if ($this->app->make(Repository::class)->get('cairn.enabled') !== true) {
+            return;
+        }
+
+        $this->callAfterResolving(Schedule::class, function (Schedule $schedule): void {
+            if ($this->alreadyScheduled($schedule, 'cairn:rollup')) {
+                return;
+            }
+
+            // Hourly rather than per-minute: the lottery keeps the current
+            // day's buckets fresh between runs, and this is the repair pass.
+            $schedule->command('cairn:rollup --period=all')
+                ->hourly()
+                ->withoutOverlapping()
+                ->runInBackground();
+
+            if (! $this->alreadyScheduled($schedule, 'cairn:prune')) {
+                $schedule->command('cairn:prune')
+                    ->dailyAt('03:10')
+                    ->withoutOverlapping()
+                    ->runInBackground();
+            }
+        });
+    }
+
+    /**
+     * Whether the application has already scheduled a Cairn command.
+     */
+    private function alreadyScheduled(Schedule $schedule, string $command): bool
+    {
+        foreach ($schedule->events() as $event) {
+            if (str_contains($event->command ?? '', $command)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

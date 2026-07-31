@@ -11,6 +11,7 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Identity\SessionResolver;
+use Divoto\Cairn\Maintenance\Maintenance;
 use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Recording\EntryFactory;
@@ -46,6 +47,7 @@ final class TrackPageView
         private readonly UniqueCounter $uniques,
         private readonly Presence $presence,
         private readonly SessionResolver $sessions,
+        private readonly Maintenance $maintenance,
         private readonly Config $config,
     ) {}
 
@@ -106,6 +108,11 @@ final class TrackPageView
             ]);
 
             $this->ingest->digest($this->storage);
+
+            // The scheduler is the recommended way to keep rollups current.
+            // This is the fallback for hosts that have no cron at all, and it
+            // runs after the response has already gone out.
+            $this->maintenance->tick();
         } catch (Throwable $e) {
             report($e);
         }
