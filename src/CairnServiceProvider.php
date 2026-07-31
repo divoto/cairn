@@ -25,6 +25,7 @@ use Divoto\Cairn\Counting\RedisUniqueCounter;
 use Divoto\Cairn\Detection\UserAgentBotDetector;
 use Divoto\Cairn\Detection\UserAgentDeviceDetector;
 use Divoto\Cairn\Geo\NullGeoResolver;
+use Divoto\Cairn\Http\Middleware\Authorize;
 use Divoto\Cairn\Http\Middleware\TrackPageView;
 use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Identity\VisitorHasher;
@@ -45,10 +46,13 @@ use Divoto\Cairn\Storage\NullStorage;
 use Divoto\Cairn\Support\ChannelClassifier;
 use Divoto\Cairn\Support\RouteNameGrouper;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
+use Divoto\Cairn\Widgets\WidgetRegistry;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Contracts\Http\Kernel;
+use Illuminate\Contracts\Routing\Registrar;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -74,6 +78,21 @@ final class CairnServiceProvider extends ServiceProvider
      * Absolute path to the packaged migrations.
      */
     private const MIGRATIONS_PATH = __DIR__.'/../database/migrations';
+
+    /**
+     * Absolute path to the packaged Blade views.
+     */
+    private const VIEWS_PATH = __DIR__.'/../resources/views';
+
+    /**
+     * Absolute path to the pre-built dashboard assets.
+     */
+    private const ASSETS_PATH = __DIR__.'/../resources/dist';
+
+    /**
+     * Absolute path to the dashboard routes.
+     */
+    private const ROUTES_PATH = __DIR__.'/../routes/dashboard.php';
 
     /**
      * Whether Cairn should run its own migrations from the package.
@@ -206,6 +225,7 @@ final class CairnServiceProvider extends ServiceProvider
         $this->app->singleton(TrackPageView::class);
         $this->app->singleton(Pruner::class);
         $this->app->singleton(Maintenance::class);
+        $this->app->singleton(WidgetRegistry::class);
     }
 
     /**
@@ -249,6 +269,8 @@ final class CairnServiceProvider extends ServiceProvider
         }
 
         $this->registerMiddleware();
+        $this->registerGate();
+        $this->registerDashboard();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -266,6 +288,68 @@ final class CairnServiceProvider extends ServiceProvider
 
             $this->registerSchedule();
         }
+    }
+
+    /**
+     * Define the dashboard authorisation gate.
+     *
+     * Defined only if the application has not defined it, so a deployer's own
+     * `viewCairn` gate always wins.
+     *
+     * The default denies everybody outside the local environment — the same
+     * stance Telescope and Pulse take, and the right one: an analytics
+     * dashboard reachable by anybody who guesses the URL is a data leak, and a
+     * package cannot know who is allowed to see it.
+     */
+    private function registerGate(): void
+    {
+        $this->callAfterResolving(Gate::class, function (Gate $gate): void {
+            if ($gate->has('viewCairn')) {
+                return;
+            }
+
+            $gate->define('viewCairn', fn (mixed $user = null): bool => $this->app->environment('local'));
+        });
+    }
+
+    /**
+     * Register the dashboard's routes, views and publishable assets.
+     */
+    private function registerDashboard(): void
+    {
+        $this->loadViewsFrom(self::VIEWS_PATH, 'cairn');
+
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                self::VIEWS_PATH => $this->app->resourcePath('views/vendor/cairn'),
+            ], 'cairn-views');
+
+            $this->publishes([
+                self::ASSETS_PATH => $this->app->publicPath('vendor/cairn'),
+            ], 'cairn-assets');
+        }
+
+        $config = $this->app->make(Repository::class);
+
+        if ($config->get('cairn.dashboard.enabled') !== true) {
+            return;
+        }
+
+        if ($config->get('cairn.dashboard.driver') === 'none') {
+            return;
+        }
+
+        $middleware = $config->get('cairn.dashboard.middleware');
+        $path = $config->get('cairn.dashboard.path');
+
+        $this->app->make(Registrar::class)->group([
+            'domain' => null,
+            'prefix' => is_string($path) && $path !== '' ? $path : 'cairn',
+            'middleware' => is_array($middleware) ? [...$middleware, Authorize::class] : ['web', Authorize::class],
+            'as' => 'cairn.',
+        ], function (): void {
+            $this->loadRoutesFrom(self::ROUTES_PATH);
+        });
     }
 
     /**

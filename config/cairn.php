@@ -7,6 +7,21 @@ use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recorders\Conversions;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
+use Divoto\Cairn\Widgets\Shipped\ActivityFeed;
+use Divoto\Cairn\Widgets\Shipped\Browsers;
+use Divoto\Cairn\Widgets\Shipped\Campaigns;
+use Divoto\Cairn\Widgets\Shipped\Channels;
+use Divoto\Cairn\Widgets\Shipped\Conversions as ConversionsWidget;
+use Divoto\Cairn\Widgets\Shipped\Countries;
+use Divoto\Cairn\Widgets\Shipped\Devices;
+use Divoto\Cairn\Widgets\Shipped\Events;
+use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
+use Divoto\Cairn\Widgets\Shipped\Mediums;
+use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
+use Divoto\Cairn\Widgets\Shipped\Overview;
+use Divoto\Cairn\Widgets\Shipped\Referrers;
+use Divoto\Cairn\Widgets\Shipped\Sources;
+use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 
 return [
 
@@ -300,6 +315,27 @@ return [
         'driver' => env('CAIRN_DASHBOARD', 'blade'),
         'path' => env('CAIRN_PATH', 'cairn'),
         'middleware' => ['web'],
+
+        // The panels to draw, in order. Remove one, reorder them, or add your
+        // own by subclassing Divoto\Cairn\Widgets\Widget — or, for a ranked
+        // table of a single dimension, Widgets\DimensionWidget.
+        'widgets' => [
+            Overview::class,
+            LiveVisitors::class,
+            TopRoutes::class,
+            Referrers::class,
+            Channels::class,
+            Countries::class,
+            Devices::class,
+            Browsers::class,
+            OperatingSystems::class,
+            Campaigns::class,
+            Sources::class,
+            Mediums::class,
+            Events::class,
+            ConversionsWidget::class,
+            ActivityFeed::class,
+        ],
     ],
 
     /*

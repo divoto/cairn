@@ -172,7 +172,12 @@ final readonly class DatabaseStorage implements Storage
             $rows = [];
 
             // The site-wide totals, stored under an empty dimension tuple.
-            foreach ($this->measure($bucket, $end, $tenant) as $metric => $value) {
+            $overall = array_merge(
+                $this->measure($bucket, $end, $tenant),
+                $this->measureSessions($bucket, $end, $tenant),
+            );
+
+            foreach ($overall as $metric => $value) {
                 $rows[] = $this->aggregateRow($bucket, $period, $tenant, 'overall', [], $metric, $value);
             }
 
@@ -209,7 +214,53 @@ final readonly class DatabaseStorage implements Storage
     }
 
     /**
-     * Measure the additive metrics for a bucket, optionally site-wide.
+     * Session-derived metrics for a bucket.
+     *
+     * Sessions live in their own table, so they are measured separately rather
+     * than derived from entries. Without this, bounce rate and average session
+     * duration have no denominator and can never be reported — the components
+     * simply would not exist.
+     *
+     * Sessions are attributed to the bucket they *started* in. A visit that
+     * spans midnight belongs to the day it began, which is the only assignment
+     * that keeps the daily counts summing to the monthly one.
+     *
+     * @return array<string, float>
+     */
+    private function measureSessions(CarbonImmutable $from, CarbonImmutable $to, string $tenant): array
+    {
+        $row = (array) $this->connection()
+            ->table(Tables::sessions())
+            ->where('tenant_id', $tenant)
+            ->where('started_at', '>=', $from->toDateTimeString())
+            ->where('started_at', '<', $to->toDateTimeString())
+            ->selectRaw(implode(', ', [
+                'count(*) as m_sessions',
+                'sum(case when is_bounce = 1 then 1 else 0 end) as m_bounces',
+                'sum(coalesce(duration_seconds, 0)) as m_session_seconds',
+            ]))
+            ->first();
+
+        $out = [];
+
+        foreach ([
+            'm_sessions' => Metric::Sessions,
+            'm_bounces' => Metric::Bounces,
+            'm_session_seconds' => Metric::SessionSeconds,
+        ] as $column => $metric) {
+            $value = $row[$column] ?? null;
+            $amount = is_numeric($value) ? (float) $value : 0.0;
+
+            if ($amount !== 0.0) {
+                $out[$metric->value] = $amount;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Measure the entry-derived additive metrics for a bucket.
      *
      * @return array<string, float>
      */
@@ -359,6 +410,16 @@ final readonly class DatabaseStorage implements Storage
             ->where('occurred_at', '<', $to->toDateTimeString())
             ->distinct()
             ->pluck('tenant_id')
+            ->merge(
+                // A bucket can hold a session that started in it without an
+                // entry of its own, when a visit spans a bucket boundary.
+                $this->connection()
+                    ->table(Tables::sessions())
+                    ->where('started_at', '>=', $from->toDateTimeString())
+                    ->where('started_at', '<', $to->toDateTimeString())
+                    ->distinct()
+                    ->pluck('tenant_id')
+            )
             ->map(static fn (mixed $value): string => is_scalar($value) ? (string) $value : '')
             ->all();
 

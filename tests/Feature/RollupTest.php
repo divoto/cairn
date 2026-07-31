@@ -251,6 +251,79 @@ it('stores no rows for metrics that measured nothing', function (): void {
 
 /*
 |--------------------------------------------------------------------------
+| Session-derived metrics
+|--------------------------------------------------------------------------
+|
+| Sessions live in their own table, so they are measured separately. Without
+| this, bounce rate and average session duration have no denominator and can
+| never be reported — a gap that showed up as a permanent "0 sessions" on a
+| real dashboard rather than as a failing test.
+|
+*/
+
+it('rolls up sessions, bounces and session duration', function (): void {
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    foreach ([[true, 0], [true, 0], [false, 240]] as $index => [$bounced, $seconds]) {
+        $connection->table(Tables::sessions())->insert([
+            'id' => random_bytes(16),
+            'visitor' => random_bytes(16),
+            'started_at' => '2026-03-14 09:0'.$index.':00',
+            'last_activity_at' => '2026-03-14 09:0'.$index.':00',
+            'page_count' => $bounced ? 1 : 4,
+            'duration_seconds' => $seconds,
+            'is_bounce' => $bounced,
+            'tenant_id' => '',
+        ]);
+    }
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Sessions->value))->toBe(3.0)
+        ->and(metricFor(Metric::Bounces->value))->toBe(2.0)
+        ->and(metricFor(Metric::SessionSeconds->value))->toBe(240.0);
+});
+
+/**
+ * A visit that spans midnight belongs to the day it began. Any other
+ * assignment stops the daily counts summing to the monthly one.
+ */
+it('attributes a session to the bucket it started in', function (): void {
+    app(DatabaseManager::class)->connection(Tables::connection())
+        ->table(Tables::sessions())->insert([
+            'id' => random_bytes(16),
+            'visitor' => random_bytes(16),
+            'started_at' => '2026-03-14 23:50:00',
+            'last_activity_at' => '2026-03-15 00:10:00',
+            'page_count' => 3,
+            'duration_seconds' => 1200,
+            'is_bounce' => false,
+            'tenant_id' => '',
+        ]);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $byBucket = aggregates()
+        ->where('type', Metric::Sessions->value)
+        ->pluck('value', 'bucket')
+        ->map(static fn (mixed $v): float => is_numeric($v) ? (float) $v : 0.0)
+        ->all();
+
+    expect($byBucket)->toHaveCount(1)
+        ->and(array_key_first($byBucket))
+        ->toBe(CarbonImmutable::parse('2026-03-14', 'UTC')->getTimestamp());
+});
+
+/*
+|--------------------------------------------------------------------------
 | The command
 |--------------------------------------------------------------------------
 */

@@ -115,6 +115,40 @@ enum Dimension: string
     }
 
     /**
+     * Turn a stored dimension value into something readable.
+     *
+     * Channel, device type, browser and operating system are stored as small
+     * integers — the column is written on every pageview, and the enum case
+     * values are permanent. Rendering the stored value would put "3" on the
+     * dashboard where "Social" belongs.
+     */
+    public function display(string|int|null $value): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        $numeric = is_numeric($value) ? (int) $value : null;
+
+        if ($numeric !== null) {
+            $label = match ($this) {
+                self::Channel => Channel::tryFrom($numeric)?->label(),
+                self::DeviceType => DeviceType::tryFrom($numeric)?->label(),
+                self::Browser => Browser::tryFrom($numeric)?->label(),
+                self::OperatingSystem => OperatingSystem::tryFrom($numeric)?->label(),
+                self::ScreenClass => ScreenClass::tryFrom($numeric)?->label(),
+                default => null,
+            };
+
+            if ($label !== null) {
+                return $label;
+            }
+        }
+
+        return (string) $value;
+    }
+
+    /**
      * A human-readable label for dashboards and exports.
      */
     public function label(): string
