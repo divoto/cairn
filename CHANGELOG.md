@@ -48,9 +48,8 @@ until the package has run in production for a meaningful period.
   access request as JSON. `cairn:doctor` reports what an installation stores
   and exposes, without asserting any legal conclusion. Publishable
   privacy-notice template and opt-out controller stub.
-
 - Repository scaffold: Composer package definition, PSR-4 autoloading, package
-  discovery, and the `cairn-config` publish tag.
+  discovery, and the publish tags.
 - Quality gates: Laravel Pint (`laravel` preset), PHPStan level 9 via Larastan
   with an empty baseline, Rector targeting PHP 8.2, and Pest with Orchestra
   Testbench.
