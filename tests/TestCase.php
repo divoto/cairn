@@ -6,6 +6,8 @@ namespace Divoto\Cairn\Tests;
 
 use Divoto\Cairn\CairnServiceProvider;
 use Illuminate\Foundation\Application;
+use Laravel\Pulse\PulseServiceProvider;
+use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 /**
@@ -25,6 +27,11 @@ abstract class TestCase extends Orchestra
     protected function getPackageProviders($app): array
     {
         return [
+            // Livewire and Pulse are dev dependencies only, present so the
+            // optional adapters are tested rather than shipped blind. Cairn
+            // itself never requires them.
+            LivewireServiceProvider::class,
+            PulseServiceProvider::class,
             CairnServiceProvider::class,
         ];
     }
@@ -66,5 +73,10 @@ abstract class TestCase extends Orchestra
         ]);
 
         $config->set('cairn.enabled', true);
+
+        // The shipped default is ['api', 'auth:sanctum']; sanctum is not
+        // installed here. ConfigurationTest asserts the real default — this
+        // only makes the routes resolvable in the test application.
+        $config->set('cairn.api.middleware', ['api']);
     }
 }

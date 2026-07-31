@@ -65,6 +65,17 @@ it('defaults to the database driver so Redis is never required', function (): vo
     expect(config('cairn.driver'))->toBe('database');
 });
 
+/**
+ * The API can read everything the dashboard can, so the shipped default puts
+ * it behind authentication as well as behind a switch.
+ */
+it('puts the JSON API behind auth:sanctum by default', function (): void {
+    $packaged = require __DIR__.'/../../config/cairn.php';
+
+    expect($packaged['api']['enabled'])->toBeFalse()
+        ->and($packaged['api']['middleware'])->toBe(['api', 'auth:sanctum']);
+});
+
 it('keeps the JSON API and tenancy off until explicitly enabled', function (): void {
     expect(config('cairn.api.enabled'))->toBeFalse()
         ->and(config('cairn.tenancy.enabled'))->toBeFalse();

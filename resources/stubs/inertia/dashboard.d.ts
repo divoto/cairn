@@ -1,0 +1,62 @@
+/**
+ * Page props for Cairn's Inertia dashboard.
+ *
+ * These match what Divoto\Cairn\Integrations\Inertia\DashboardController
+ * renders. A test asserts the two stay in step.
+ *
+ * The Vue and React components published alongside this file are starting
+ * points you own. Cairn does not maintain their appearance.
+ */
+
+export type MetricUnit =
+    | 'count'
+    | 'decimal'
+    | 'percentage'
+    | 'seconds'
+    | 'milliseconds'
+    | 'currency';
+
+export type WidgetLayout = 'overview' | 'table' | 'stat' | 'map' | 'feed';
+
+export interface MetricDefinition {
+    key: string;
+    label: string;
+    unit: MetricUnit;
+}
+
+export interface ReportRow {
+    bucket?: string;
+    dimensions?: Record<string, string | number | null>;
+    metrics?: Record<string, number>;
+    previous?: Record<string, number>;
+    /** True when a figure is an estimate — see the privacy model. */
+    approximate?: boolean;
+}
+
+export interface Widget {
+    key: string;
+    title: string;
+    description: string | null;
+    layout: WidgetLayout;
+    dimension: string | null;
+    metrics: MetricDefinition[];
+    /** Shown instead of the rows when there are none. */
+    empty: string;
+    rows: ReportRow[];
+}
+
+export interface Filters {
+    range: string;
+    rangeLabel: string;
+    comparison: 'none' | 'previous_period' | 'previous_year';
+    interval: 'hour' | 'day' | 'month';
+    from: string;
+    to: string;
+    active: Record<string, string>;
+}
+
+export interface DashboardProps {
+    filters: Filters;
+    ranges: Record<string, string>;
+    widgets: Widget[];
+}

@@ -29,12 +29,14 @@ use Divoto\Cairn\Detection\UserAgentBotDetector;
 use Divoto\Cairn\Detection\UserAgentDeviceDetector;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Http\Middleware\Authorize;
+use Divoto\Cairn\Http\Middleware\EnsureApiEnabled;
 use Divoto\Cairn\Http\Middleware\TrackPageView;
 use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Identity\VisitorHasher;
 use Divoto\Cairn\Ingest\DatabaseIngest;
 use Divoto\Cairn\Ingest\NullIngest;
 use Divoto\Cairn\Ingest\RedisIngest;
+use Divoto\Cairn\Integrations\Integrations;
 use Divoto\Cairn\Maintenance\Doctor;
 use Divoto\Cairn\Maintenance\Eraser;
 use Divoto\Cairn\Maintenance\Maintenance;
@@ -106,6 +108,11 @@ final class CairnServiceProvider extends ServiceProvider
      * Absolute path to the beacon's route.
      */
     private const COLLECT_ROUTES_PATH = __DIR__.'/../routes/collect.php';
+
+    /**
+     * Absolute path to the JSON API's routes.
+     */
+    private const API_ROUTES_PATH = __DIR__.'/../routes/api.php';
 
     /**
      * Absolute path to the beacon source and its minified build.
@@ -298,6 +305,8 @@ final class CairnServiceProvider extends ServiceProvider
         $this->registerGate();
         $this->registerDashboard();
         $this->registerBeacon();
+        $this->registerIntegrations();
+        $this->registerApi();
 
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -358,6 +367,52 @@ final class CairnServiceProvider extends ServiceProvider
     }
 
     /**
+     * Register the JSON API, if it has been switched on.
+     *
+     * Off by default: it can read everything the dashboard can, and a package
+     * cannot know who is allowed to call it.
+     */
+    private function registerApi(): void
+    {
+        $config = $this->app->make(Repository::class);
+
+        if ($config->get('cairn.enabled') !== true) {
+            return;
+        }
+
+        $middleware = $config->get('cairn.api.middleware');
+        $path = $config->get('cairn.dashboard.path');
+
+        // Registered whether or not the API is enabled, and guarded per
+        // request by EnsureApiEnabled. Toggling the setting then takes effect
+        // without a route-cache rebuild, and a disabled endpoint 404s — to
+        // anybody who has not been told it exists, indistinguishable from one
+        // that was never built.
+        $this->app->make(Registrar::class)->group([
+            'prefix' => (is_string($path) && $path !== '' ? $path : 'cairn').'/api',
+            'middleware' => [
+                ...(is_array($middleware) ? $middleware : ['api']),
+                EnsureApiEnabled::class,
+            ],
+            'as' => 'cairn.',
+        ], function (): void {
+            $this->loadRoutesFrom(self::API_ROUTES_PATH);
+        });
+    }
+
+    /**
+     * Register the optional integrations.
+     *
+     * Delegated to the Integrations namespace, which is the only place in the
+     * package permitted to name Livewire, Inertia or Pulse — an architecture
+     * test enforces that boundary.
+     */
+    private function registerIntegrations(): void
+    {
+        $this->app->make(Integrations::class)->register();
+    }
+
+    /**
      * Define the dashboard authorisation gate.
      *
      * Defined only if the application has not defined it, so a deployer's own
@@ -400,6 +455,13 @@ final class CairnServiceProvider extends ServiceProvider
             // starting points the deployer owns — the wording, the routes and
             // the redirect targets belong to their application, and the notice
             // is explicitly not legal advice.
+            // Starting points the deployer owns. Cairn does not maintain the
+            // appearance of framework components inside somebody else's design
+            // system, and says so in the README.
+            $this->publishes([
+                self::STUBS_PATH.'/inertia' => $this->app->resourcePath('js/cairn'),
+            ], 'cairn-inertia');
+
             $this->publishes([
                 self::STUBS_PATH.'/privacy-notice.md' => $this->app->basePath('resources/cairn/privacy-notice.md'),
                 self::STUBS_PATH.'/opt-out-controller.stub' => $this->app->basePath('app/Http/Controllers/OptOutController.php'),
