@@ -11,6 +11,7 @@ use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Reporting\Report;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Facade;
+use Symfony\Component\HttpFoundation\Cookie;
 
 /**
  * The one facade Cairn ships.
@@ -29,6 +30,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static int digest()
  * @method static void touch(Request $request, ?string $page = null)
  * @method static DeclineReason|null decide(Request $request)
+ * @method static Cookie optOut()
+ * @method static Cookie optIn()
+ * @method static bool hasOptedOut(?Request $request = null)
  * @method static Report report()
  * @method static SessionResolver sessions()
  *

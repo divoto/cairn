@@ -1,0 +1,41 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use Divoto\Cairn\Facades\Cairn;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+
+/**
+ * Lets a visitor opt out of analytics, and back in.
+ *
+ * Published as a stub because the route, the redirect target and the wording
+ * belong to your application, not to Cairn.
+ *
+ *     Route::get('/analytics/opt-out', [OptOutController::class, 'store']);
+ *     Route::get('/analytics/opt-in',  [OptOutController::class, 'destroy']);
+ */
+final class OptOutController
+{
+    /**
+     * Record that this visitor does not want to be measured.
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        return redirect('/privacy')
+            ->with('status', 'You have opted out of analytics on this site.')
+            ->withCookie(Cairn::optOut());
+    }
+
+    /**
+     * Withdraw a previous opt-out.
+     */
+    public function destroy(Request $request): RedirectResponse
+    {
+        return redirect('/privacy')
+            ->with('status', 'You have opted back in to analytics on this site.')
+            ->withCookie(Cairn::optIn());
+    }
+}

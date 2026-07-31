@@ -14,12 +14,14 @@ use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\DeclineReason;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Identity\SessionResolver;
+use Divoto\Cairn\Privacy\OptOut;
 use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Recording\EntryFactory;
 use Divoto\Cairn\Reporting\Report;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Cookie;
 use Throwable;
 
 /**
@@ -48,6 +50,7 @@ final class Cairn
         private readonly Presence $presence,
         private readonly SessionResolver $sessions,
         private readonly TenantResolver $tenants,
+        private readonly OptOut $optOut,
     ) {}
 
     /**
@@ -168,6 +171,34 @@ final class Cairn
     public function decide(Request $request): ?DeclineReason
     {
         return $this->gate->decide($request, $this->sampleRate(), PageViews::class);
+    }
+
+    /**
+     * Record that this visitor does not want to be measured.
+     *
+     * Returns the cookie rather than queueing it, so the caller attaches it to
+     * a response they control. See {@see OptOut} for why remembering a refusal
+     * requires the one cookie Cairn ever sets.
+     */
+    public function optOut(): Cookie
+    {
+        return $this->optOut->cookie();
+    }
+
+    /**
+     * Withdraw a previous refusal.
+     */
+    public function optIn(): Cookie
+    {
+        return $this->optOut->forgetCookie();
+    }
+
+    /**
+     * Whether this visitor has opted out.
+     */
+    public function hasOptedOut(?Request $request = null): bool
+    {
+        return $this->optOut->has($request ?? request());
     }
 
     /**

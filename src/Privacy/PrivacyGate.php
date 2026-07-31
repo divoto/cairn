@@ -47,6 +47,7 @@ final readonly class PrivacyGate
         private Config $config,
         private BotDetector $bots,
         private ConsentResolver $consent,
+        private OptOut $optOut,
     ) {}
 
     /**
@@ -77,6 +78,10 @@ final readonly class PrivacyGate
 
         if ($this->signalsGlobalPrivacyControl($request)) {
             return DeclineReason::GlobalPrivacyControl;
+        }
+
+        if ($this->optOut->has($request)) {
+            return DeclineReason::OptedOut;
         }
 
         if (! $this->hasConsent($request)) {

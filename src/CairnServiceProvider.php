@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Divoto\Cairn;
 
 use Divoto\Cairn\Cairn as CairnManager;
+use Divoto\Cairn\Commands\DoctorCommand;
+use Divoto\Cairn\Commands\ExportCommand;
+use Divoto\Cairn\Commands\ForgetCommand;
 use Divoto\Cairn\Commands\PartitionCommand;
 use Divoto\Cairn\Commands\PruneCommand;
 use Divoto\Cairn\Commands\RollupCommand;
@@ -32,12 +35,15 @@ use Divoto\Cairn\Identity\VisitorHasher;
 use Divoto\Cairn\Ingest\DatabaseIngest;
 use Divoto\Cairn\Ingest\NullIngest;
 use Divoto\Cairn\Ingest\RedisIngest;
+use Divoto\Cairn\Maintenance\Doctor;
+use Divoto\Cairn\Maintenance\Eraser;
 use Divoto\Cairn\Maintenance\Maintenance;
 use Divoto\Cairn\Maintenance\Pruner;
 use Divoto\Cairn\Presence\DatabasePresence;
 use Divoto\Cairn\Presence\NullPresence;
 use Divoto\Cairn\Presence\RedisPresence;
 use Divoto\Cairn\Privacy\IpAnonymiser;
+use Divoto\Cairn\Privacy\OptOut;
 use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Recording\EntryFactory;
@@ -93,6 +99,11 @@ final class CairnServiceProvider extends ServiceProvider
      * Absolute path to the dashboard routes.
      */
     private const ROUTES_PATH = __DIR__.'/../routes/dashboard.php';
+
+    /**
+     * Absolute path to the publishable stubs.
+     */
+    private const STUBS_PATH = __DIR__.'/../resources/stubs';
 
     /**
      * Whether Cairn should run its own migrations from the package.
@@ -212,6 +223,7 @@ final class CairnServiceProvider extends ServiceProvider
 
         $this->app->singleton(SessionResolver::class);
         $this->app->singleton(IpAnonymiser::class);
+        $this->app->singleton(OptOut::class);
         $this->app->singleton(PrivacyGate::class);
         $this->app->singleton(ChannelClassifier::class);
         $this->app->singleton(RouteNameGrouper::class);
@@ -224,6 +236,8 @@ final class CairnServiceProvider extends ServiceProvider
         // is exactly what happened the first time Cairn recorded real traffic.
         $this->app->singleton(TrackPageView::class);
         $this->app->singleton(Pruner::class);
+        $this->app->singleton(Doctor::class);
+        $this->app->singleton(Eraser::class);
         $this->app->singleton(Maintenance::class);
         $this->app->singleton(WidgetRegistry::class);
     }
@@ -280,6 +294,9 @@ final class CairnServiceProvider extends ServiceProvider
             $this->publishMigrations();
 
             $this->commands([
+                DoctorCommand::class,
+                ExportCommand::class,
+                ForgetCommand::class,
                 PartitionCommand::class,
                 PruneCommand::class,
                 RollupCommand::class,
@@ -327,6 +344,15 @@ final class CairnServiceProvider extends ServiceProvider
             $this->publishes([
                 self::ASSETS_PATH => $this->app->publicPath('vendor/cairn'),
             ], 'cairn-assets');
+
+            // A privacy-notice template and an opt-out controller. Both are
+            // starting points the deployer owns — the wording, the routes and
+            // the redirect targets belong to their application, and the notice
+            // is explicitly not legal advice.
+            $this->publishes([
+                self::STUBS_PATH.'/privacy-notice.md' => $this->app->basePath('resources/cairn/privacy-notice.md'),
+                self::STUBS_PATH.'/opt-out-controller.stub' => $this->app->basePath('app/Http/Controllers/OptOutController.php'),
+            ], 'cairn-privacy');
         }
 
         $config = $this->app->make(Repository::class);
