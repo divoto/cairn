@@ -83,16 +83,26 @@ final readonly class SessionResolver
     /**
      * Persist a page's contribution to a session.
      *
-     * One upsert. `page_count` is incremented in the database rather than read
-     * and written back, so two concurrent requests cannot both read 3 and both
-     * write 4. `is_bounce` is recomputed from the resulting count.
+     * One statement. `page_count` is incremented in the database rather than
+     * read and written back, so two concurrent requests cannot both read 3 and
+     * both write 4. `is_bounce` is recomputed from the resulting count.
+     *
+     * @param  array<string, mixed>  $acquisition  Written only when the session is new.
      */
-    public function record(Session $session, CarbonImmutable $at, ?string $url = null): void
-    {
+    public function record(
+        Session $session,
+        CarbonImmutable $at,
+        ?string $url = null,
+        array $acquisition = [],
+    ): void {
         $table = $this->connection()->table(Tables::sessions());
 
         if ($session->isNew) {
-            $table->insertOrIgnore([
+            // Acquisition is written once, on the first request of the visit,
+            // under a last-click model. Rewriting it on every page would
+            // attribute the visit to wherever the visitor happened to be when
+            // they left.
+            $table->insertOrIgnore(array_merge([
                 'id' => $session->id,
                 'visitor' => $session->visitor,
                 'started_at' => $session->startedAt->toDateTimeString(),
@@ -103,7 +113,7 @@ final readonly class SessionResolver
                 'exit_url' => $url,
                 'is_bounce' => true,
                 'tenant_id' => $this->tenantValue($session->tenantId),
-            ]);
+            ], $this->acquisitionColumns($acquisition)));
 
             return;
         }
@@ -116,6 +126,25 @@ final readonly class SessionResolver
             // A visit stops being a bounce the moment a second page arrives.
             'is_bounce' => false,
         ]);
+    }
+
+    /**
+     * The acquisition columns to store on a new session.
+     *
+     * Filtered to the known set rather than merged blindly, so a caller
+     * cannot write an arbitrary column through this path.
+     *
+     * @param  array<string, mixed>  $acquisition
+     * @return array<string, mixed>
+     */
+    private function acquisitionColumns(array $acquisition): array
+    {
+        $allowed = [
+            'referrer_host', 'channel', 'country', 'device_type',
+            'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        ];
+
+        return array_intersect_key($acquisition, array_flip($allowed));
     }
 
     /**

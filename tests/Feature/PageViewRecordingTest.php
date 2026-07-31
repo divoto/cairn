@@ -267,6 +267,41 @@ it('opens exactly one session across several pages', function (): void {
         ->and(boolval($sessions->value('is_bounce')))->toBeFalse();
 });
 
+/**
+ * Regression: Laravel resolves terminable middleware from the container again
+ * for terminate(), so handle() and terminate() ran on different instances and
+ * the request timer was silently lost. The suite passed; real traffic recorded
+ * a null duration on every pageview.
+ */
+it('measures server response time across handle and terminate', function (): void {
+    browse('/pricing');
+
+    expect(entries()->value('duration_ms'))->not->toBeNull();
+});
+
+/**
+ * Regression: the session's acquisition columns were never written, so every
+ * session reported a null channel however the visitor had arrived.
+ */
+it('records acquisition on the session, once, from the first page', function (): void {
+    browse('/pricing?utm_source=newsletter&utm_medium=email', [
+        'Referer' => 'https://mastodon.social/@someone/1',
+    ]);
+
+    // A later page must not overwrite how the visit started.
+    browse('/plain/2');
+
+    $session = (array) app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::sessions())
+        ->first();
+
+    expect($session['channel'] ?? null)->toBe(Channel::Email->value)
+        ->and($session['utm_source'] ?? null)->toBe('newsletter')
+        ->and($session['referrer_host'] ?? null)->toBe('mastodon.social')
+        ->and($session['entry_url'] ?? null)->toContain('utm_source=newsletter');
+});
+
 it('attaches every entry in a visit to the same session', function (): void {
     browse('/pricing');
     browse('/plain/2');

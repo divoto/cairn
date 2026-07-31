@@ -192,6 +192,12 @@ final class CairnServiceProvider extends ServiceProvider
         $this->app->singleton(RouteNameGrouper::class);
         $this->app->singleton(EntryFactory::class);
         $this->app->singleton(CairnManager::class);
+
+        // Laravel resolves terminable middleware from the container again for
+        // terminate(). Without this binding, handle() and terminate() run on
+        // different instances and the request timer is silently lost — which
+        // is exactly what happened the first time Cairn recorded real traffic.
+        $this->app->singleton(TrackPageView::class);
     }
 
     /**

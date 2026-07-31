@@ -92,7 +92,18 @@ final class TrackPageView
             }
 
             $session = $this->sessions->resolve($entry->visitor, $entry->occurredAt);
-            $this->sessions->record($session, $entry->occurredAt, $entry->url);
+
+            $this->sessions->record($session, $entry->occurredAt, $entry->url, [
+                'referrer_host' => $entry->referrerHost,
+                'channel' => $entry->channel?->value,
+                'country' => $entry->country,
+                'device_type' => $entry->deviceType?->value,
+                'utm_source' => $entry->utmSource,
+                'utm_medium' => $entry->utmMedium,
+                'utm_campaign' => $entry->utmCampaign,
+                'utm_term' => $entry->utmTerm,
+                'utm_content' => $entry->utmContent,
+            ]);
 
             $this->ingest->digest($this->storage);
         } catch (Throwable $e) {
