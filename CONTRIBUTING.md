@@ -85,7 +85,17 @@ baseline entry.
 
 ## Tests
 
-- Pest, with `orchestra/testbench`. Target is 90%+ line coverage on `src/`.
+- Pest, with `orchestra/testbench`. Target is 90%+ line coverage on `src/`;
+  it currently sits at 94%.
+
+  The gap is not laziness. What remains uncovered on SQLite is, almost
+  entirely, code that cannot run there: `cairn:partition`'s `ALTER TABLE`, the
+  `information_schema` lookups and `DROP PARTITION` in `Pruner`, and the
+  `catch` blocks in the Redis drivers that need a deliberately broken
+  connection. CI runs the same suite against MySQL, MariaDB and PostgreSQL,
+  which is where those paths execute. Chasing them to 100% locally would mean
+  mocking the database, and a mocked `DROP PARTITION` proves nothing about
+  whether MySQL accepts it.
 - Every driver pair (Redis vs database) is tested against the **same** suite via
   a shared dataset. Behaviour that differs between drivers is a bug.
 - The privacy invariants get explicit regression tests, not incidental coverage.
