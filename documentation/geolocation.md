@@ -32,18 +32,26 @@ mkdir -p storage/app/geoip
 mv ~/Downloads/GeoLite2-Country.mmdb storage/app/geoip/
 ```
 
-**3. Point Cairn at it.**
+**3. Point Cairn at it.** One line, if you used the path above — it is already
+the default:
 
 ```php
 // config/cairn.php
 'privacy' => [
     'geo_resolver' => \Divoto\Cairn\Geo\MaxMindGeoResolver::class,
-    'geo_database' => env('CAIRN_GEO_DATABASE'),
 ],
 ```
 
+The database path defaults to `storage/app/geoip/GeoLite2-Country.mmdb`.
+**Relative paths resolve against your application root**, so that setting is
+the same on every machine and can be committed.
+
+To keep the database somewhere else — shared between applications, or on a
+mounted volume — override it:
+
 ```env
-CAIRN_GEO_DATABASE=/full/path/to/storage/app/geoip/GeoLite2-Country.mmdb
+CAIRN_GEO_DATABASE=geo/GeoLite2-Country.mmdb     # relative to the app root
+CAIRN_GEO_DATABASE=/srv/geoip/GeoLite2-City.mmdb # absolute, used as given
 ```
 
 **4. Check it.**

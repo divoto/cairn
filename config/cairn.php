@@ -237,7 +237,10 @@ return [
         */
         'geo_resolver' => NullGeoResolver::class,
 
-        'geo_database' => env('CAIRN_GEO_DATABASE'),
+        // Relative paths resolve against the application root, so this can be
+        // committed rather than differing per machine. An absolute path works
+        // too, for a database shared between applications.
+        'geo_database' => env('CAIRN_GEO_DATABASE', 'storage/app/geoip/GeoLite2-Country.mmdb'),
 
         // How precisely a resolved location may be stored: "none", "country",
         // "region" or "city". Anything finer than this is discarded before an

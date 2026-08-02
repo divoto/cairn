@@ -235,6 +235,87 @@ it('reports the configured path so the doctor can check it', function (): void {
 
 /*
 |--------------------------------------------------------------------------
+| Where the database is looked for
+|--------------------------------------------------------------------------
+|
+| PHP's working directory during a web request is public/, so a bare relative
+| path would otherwise be looked for in the one directory the database must
+| never be in. Resolving against the application root also means the setting
+| is identical on every machine and can be committed.
+|
+*/
+
+it('resolves a relative path against the application root', function (): void {
+    config()->set('cairn.privacy.geo_database', 'storage/app/geoip/GeoLite2-Country.mmdb');
+
+    $resolved = (new MaxMindGeoResolver(app(Config::class)))->databasePath();
+
+    expect($resolved)->toBe(base_path('storage/app/geoip/GeoLite2-Country.mmdb'))
+        ->and(str_starts_with(asString($resolved), base_path()))->toBeTrue();
+});
+
+it('leaves an absolute path exactly as given', function (string $path): void {
+    config()->set('cairn.privacy.geo_database', $path);
+
+    expect((new MaxMindGeoResolver(app(Config::class)))->databasePath())->toBe($path);
+})->with([
+    'posix' => ['/srv/geoip/GeoLite2-Country.mmdb'],
+    'windows drive' => ['C:\\geoip\\GeoLite2-Country.mmdb'],
+    'windows forward slashes' => ['D:/geoip/GeoLite2-Country.mmdb'],
+    'unc share' => ['\\\\fileserver\\geoip\\GeoLite2-Country.mmdb'],
+]);
+
+it('trims a path that arrived with whitespace', function (): void {
+    config()->set('cairn.privacy.geo_database', '  /srv/geoip/GeoLite2-Country.mmdb  ');
+
+    expect((new MaxMindGeoResolver(app(Config::class)))->databasePath())
+        ->toBe('/srv/geoip/GeoLite2-Country.mmdb');
+});
+
+it('treats a blank path as no path at all', function (string $path): void {
+    config()->set('cairn.privacy.geo_database', $path);
+
+    expect((new MaxMindGeoResolver(app(Config::class)))->databasePath())->toBeNull();
+})->with([[''], ['   ']]);
+
+/**
+ * The default is a relative path, so a deployer who drops the file where the
+ * documentation says to needs no environment variable at all.
+ */
+it('defaults to a relative path under storage', function (): void {
+    $packaged = require __DIR__.'/../../config/cairn.php';
+
+    $default = $packaged['privacy']['geo_database'];
+
+    expect($default)->toBe('storage/app/geoip/GeoLite2-Country.mmdb');
+    expect(asString($default))->not->toStartWith('/');
+});
+
+it('finds a database that is actually there, given relatively', function (): void {
+    $relative = 'storage/app/geoip-test';
+    $directory = base_path($relative);
+
+    if (! is_dir($directory)) {
+        mkdir($directory, 0o755, true);
+    }
+
+    file_put_contents($directory.'/fake.mmdb', 'not a real database');
+
+    config()->set('cairn.privacy.geo_database', $relative.'/fake.mmdb');
+
+    $resolver = new MaxMindGeoResolver(app(Config::class));
+
+    // The file is found — isAvailable() is false only because the contents are
+    // not a MaxMind database, which is a different failure from a missing one.
+    expect(is_file((string) $resolver->databasePath()))->toBeTrue()
+        ->and($resolver->isAvailable())->toBeFalse();
+
+    unlink($directory.'/fake.mmdb');
+    rmdir($directory);
+});
+
+/*
+|--------------------------------------------------------------------------
 | The invariant
 |--------------------------------------------------------------------------
 */

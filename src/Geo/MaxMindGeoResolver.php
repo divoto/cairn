@@ -94,13 +94,42 @@ final class MaxMindGeoResolver implements GeoResolver
     }
 
     /**
-     * The configured database path, or null when none is set.
+     * The configured database path, resolved, or null when none is set.
+     *
+     * A relative path is resolved against the application root, so
+     * `storage/app/geoip/GeoLite2-Country.mmdb` means what it looks like it
+     * means and the setting can be committed rather than differing per
+     * machine.
+     *
+     * Resolving it explicitly matters: PHP's working directory during a web
+     * request is `public/`, so a bare relative path would otherwise be looked
+     * for in the one directory the database must never be in.
      */
     public function databasePath(): ?string
     {
         $path = $this->config->get('cairn.privacy.geo_database');
 
-        return is_string($path) && $path !== '' ? $path : null;
+        if (! is_string($path) || trim($path) === '') {
+            return null;
+        }
+
+        $path = trim($path);
+
+        return $this->isAbsolute($path) ? $path : base_path($path);
+    }
+
+    /**
+     * Whether a path is already absolute.
+     *
+     * Handles Windows drive letters and UNC paths as well as POSIX roots — a
+     * deployer on Windows setting `C:\geo\GeoLite2-Country.mmdb` should not
+     * have it silently prefixed with the application root.
+     */
+    private function isAbsolute(string $path): bool
+    {
+        return str_starts_with($path, '/')
+            || str_starts_with($path, '\\\\')
+            || preg_match('/^[A-Za-z]:[\\\\\/]/', $path) === 1;
     }
 
     /**
