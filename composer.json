@@ -38,6 +38,7 @@
         "illuminate/view": "^12.0|^13.0"
     },
     "require-dev": {
+        "geoip2/geoip2": "^3.0",
         "inertiajs/inertia-laravel": "^2.0",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.20",
@@ -54,7 +55,7 @@
         "inertiajs/inertia-laravel": "Enables the Inertia dashboard adapter",
         "laravel/pulse": "Enables the Cairn live-visitors and top-routes Pulse cards",
         "matomo/device-detector": "More accurate browser, OS and device detection",
-        "geoip2/geoip2": "Local MaxMind database for country/region lookup without an HTTP call"
+        "geoip2/geoip2": "Enables MaxMindGeoResolver for country reporting from a local database, with no third-party request"
     },
     "autoload": {
         "psr-4": {

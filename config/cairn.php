@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Divoto\Cairn\Consent\GrantingConsentResolver;
+use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recorders\Conversions;
 use Divoto\Cairn\Recorders\PageViews;
@@ -211,6 +212,32 @@ return [
         // window would make visitors linkable across a longer period, which
         // is the property this package is built to remove.
         'salt_rotation_hours' => 24,
+
+        /*
+        |----------------------------------------------------------------------
+        | Where a location comes from
+        |----------------------------------------------------------------------
+        |
+        | The default resolves nothing, and the Countries panel stays empty.
+        | That is deliberate: Cairn bundles no geo database, and will not call
+        | a third-party service per request — that would send a visitor's
+        | address off your server on every pageview.
+        |
+        | To enable country reporting, install a local MaxMind database:
+        |
+        |     composer require geoip2/geoip2
+        |
+        | download GeoLite2-Country.mmdb (free, registration required) from
+        | maxmind.com, put it somewhere readable, and set both options below.
+        | See documentation/geolocation.md for the full walkthrough.
+        |
+        | Any class implementing Divoto\Cairn\Contracts\GeoResolver works here
+        | if you would rather use something else.
+        |
+        */
+        'geo_resolver' => NullGeoResolver::class,
+
+        'geo_database' => env('CAIRN_GEO_DATABASE'),
 
         // How precisely a resolved location may be stored: "none", "country",
         // "region" or "city". Anything finer than this is discarded before an

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Storage;
+use Divoto\Cairn\Geo\MaxMindGeoResolver;
+use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Maintenance\Doctor;
 use Divoto\Cairn\Maintenance\Finding;
 use Divoto\Cairn\Support\Tables;
@@ -236,6 +238,27 @@ it('reports maintenance running from the request lottery', function (): void {
     config()->set('cairn.ingest.lottery', [2, 100]);
 
     expect(findingTitles())->toContain('request lottery');
+});
+
+/**
+ * The quiet failure: geo is configured, the file is not there, and the
+ * Countries panel stays empty forever with nothing explaining why.
+ */
+it('reports a MaxMind database that cannot be read', function (): void {
+    quietDoctor();
+
+    config()->set('cairn.privacy.geo_resolver', MaxMindGeoResolver::class);
+    config()->set('cairn.privacy.geo_database', '/nonexistent/GeoLite2-Country.mmdb');
+
+    expect(findingTitles())->toContain('MaxMind database is configured but cannot be read');
+});
+
+it('reports nothing about geo when no database is configured at all', function (): void {
+    quietDoctor();
+
+    config()->set('cairn.privacy.geo_resolver', NullGeoResolver::class);
+
+    expect(findingTitles())->not->toContain('MaxMind');
 });
 
 it('reports region-level geo as well as city', function (): void {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Maintenance;
 
 use Divoto\Cairn\Enums\GeoPrecision;
+use Divoto\Cairn\Geo\MaxMindGeoResolver;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -42,6 +43,7 @@ final readonly class Doctor
             $this->durableIdentity(),
             $this->userTracking(),
             $this->geoPrecision(),
+            $this->geoDatabase(),
             $this->retention(),
             $this->openGate(),
             $this->saltStore(),
@@ -110,6 +112,44 @@ final readonly class Doctor
             .'of people; a city plus the same attributes may describe a handful. Whether '
             .'that matters depends on your traffic volume and who your visitors are.',
             'cairn.privacy.geo_precision',
+        );
+    }
+
+    /**
+     * Geo configured but not actually working.
+     *
+     * The failure mode this catches is quiet: the Countries panel stays empty
+     * forever and nothing says why. A missing file is far more common than a
+     * wrong one, because the database is downloaded separately and is easy to
+     * forget after a deploy.
+     */
+    private function geoDatabase(): ?Finding
+    {
+        $resolver = $this->config->get('cairn.privacy.geo_resolver');
+
+        if (! is_string($resolver) || ! is_a($resolver, MaxMindGeoResolver::class, true)) {
+            return null;
+        }
+
+        $maxmind = new MaxMindGeoResolver($this->config);
+
+        if ($maxmind->isAvailable()) {
+            return null;
+        }
+
+        return new Finding(
+            'The MaxMind database is configured but cannot be read',
+            sprintf(
+                'privacy.geo_resolver points at the MaxMind resolver, but %s. Until '
+                .'that is fixed no location is recorded and the Countries panel stays '
+                .'empty. Download GeoLite2-Country.mmdb from maxmind.com and set '
+                .'CAIRN_GEO_DATABASE to its path.',
+                $maxmind->databasePath() === null
+                    ? 'privacy.geo_database is not set'
+                    : sprintf('"%s" is missing or unreadable', $maxmind->databasePath()),
+            ),
+            'cairn.privacy.geo_database',
+            severe: true,
         );
     }
 

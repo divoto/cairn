@@ -225,7 +225,14 @@ Every option is commented. The two above carry a longer explanation of what
 they change.
 
 Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
-`cairn-assets`, `cairn-privacy`.
+`cairn-assets`, `cairn-privacy`, `cairn-inertia`.
+
+## Country reporting
+
+Off by default. Cairn bundles no geo database and will not call a third-party
+service per request — that would send a visitor's address off your server on
+every pageview. To enable it, install `geoip2/geoip2` and point Cairn at a
+local MaxMind file: see [documentation/geolocation.md](documentation/geolocation.md).
 
 ## Dashboard access
 

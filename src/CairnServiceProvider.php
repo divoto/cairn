@@ -208,6 +208,7 @@ final class CairnServiceProvider extends ServiceProvider
     private const CONFIGURED = [
         TenantResolver::class => 'cairn.tenancy.resolver',
         ConsentResolver::class => 'cairn.privacy.consent_resolver',
+        GeoResolver::class => 'cairn.privacy.geo_resolver',
     ];
 
     /**

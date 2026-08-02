@@ -41,8 +41,10 @@ final class Countries extends DimensionWidget
             metrics: $this->defaultMetrics(),
             filterAs: Dimension::Country->value,
             empty: 'No locations recorded. Cairn ships no geo database and will not '
-                .'call a third party per request — install a local MaxMind database '
-                .'and configure a resolver to enable this.',
+                .'call a third party per request. Run "composer require geoip2/geoip2", '
+                .'download GeoLite2-Country.mmdb from MaxMind, and set '
+                .'privacy.geo_resolver and privacy.geo_database — see '
+                .'documentation/geolocation.md.',
         );
     }
 
