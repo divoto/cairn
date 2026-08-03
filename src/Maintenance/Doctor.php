@@ -142,8 +142,8 @@ final readonly class Doctor
             sprintf(
                 'privacy.geo_resolver points at the MaxMind resolver, but %s. Until '
                 .'that is fixed no location is recorded and the Countries panel stays '
-                .'empty. Download GeoLite2-Country.mmdb from maxmind.com and set '
-                .'CAIRN_GEO_DATABASE to its path.',
+                .'empty. Run `php artisan cairn:geoip` to download the database, or '
+                .'set CAIRN_GEO_DATABASE to where you have already put it.',
                 $maxmind->databasePath() === null
                     ? 'privacy.geo_database is not set'
                     : sprintf('"%s" is missing or unreadable', $maxmind->databasePath()),

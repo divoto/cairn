@@ -148,6 +148,7 @@ Cairn will not silently fall back to scanning raw entries.
 | `cairn:work` | Drain the Redis ingest queue (redis driver only). |
 | `cairn:partition` | Convert raw tables to monthly partitions (MySQL/MariaDB). |
 | `cairn:doctor` | Report what this installation stores and exposes. |
+| `cairn:geoip` | Download the MaxMind GeoLite2 database for country reporting. |
 | `cairn:forget` | Erase a visitor or user, and rebuild affected rollups. |
 | `cairn:export` | Export everything held about a subject, as JSON. |
 
@@ -231,8 +232,15 @@ Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
 
 Off by default. Cairn bundles no geo database and will not call a third-party
 service per request — that would send a visitor's address off your server on
-every pageview. To enable it, install `geoip2/geoip2` and point Cairn at a
-local MaxMind file: see [documentation/geolocation.md](documentation/geolocation.md).
+every pageview. Lookups happen against a local file instead:
+
+```bash
+composer require geoip2/geoip2
+php artisan cairn:geoip          # needs free MaxMind credentials
+```
+
+Then set `privacy.geo_resolver` to `MaxMindGeoResolver::class`. Full walkthrough
+in [documentation/geolocation.md](documentation/geolocation.md).
 
 ## Dashboard access
 

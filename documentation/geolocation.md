@@ -16,24 +16,36 @@ locally and nothing leaves your server.
 composer require geoip2/geoip2
 ```
 
-**2. Get a database.** MaxMind's GeoLite2 databases are free and require a
-(free) account:
+**2. Get MaxMind credentials.** GeoLite2 is free, but downloading it needs an
+account:
 
 - Sign up at [maxmind.com/en/geolite2/signup](https://www.maxmind.com/en/geolite2/signup)
-- Create a licence key
-- Download **GeoLite2-Country.mmdb** — the country database is around 6MB and
-  is all Cairn needs unless you have deliberately raised `geo_precision`
+- Under **Manage License Keys**, create a key
+- Note the **account ID** — it is the number on your account page, not your
+  email address. Using the email is the single most common way this goes wrong.
 
-Put it somewhere readable by your web user and *outside* the public directory.
-`storage/app/geoip/` is a reasonable choice.
-
-```bash
-mkdir -p storage/app/geoip
-mv ~/Downloads/GeoLite2-Country.mmdb storage/app/geoip/
+```env
+MAXMIND_ACCOUNT_ID=123456
+MAXMIND_LICENSE_KEY=your_key_here
 ```
 
-**3. Point Cairn at it.** One line, if you used the path above — it is already
-the default:
+**3. Download it.**
+
+```bash
+php artisan cairn:geoip
+```
+
+That fetches GeoLite2-Country, checks it against the sha256 MaxMind publishes,
+unpacks it, and installs it at `storage/app/geoip/GeoLite2-Country.mmdb` — which
+is where Cairn already looks. It then tells you anything still left to do.
+
+To keep the credentials out of your environment entirely, pass them instead:
+
+```bash
+php artisan cairn:geoip --account-id=123456 --key=your_key_here
+```
+
+**4. Point Cairn at it.** One line:
 
 ```php
 // config/cairn.php
@@ -42,49 +54,77 @@ the default:
 ],
 ```
 
-The database path defaults to `storage/app/geoip/GeoLite2-Country.mmdb`.
-**Relative paths resolve against your application root**, so that setting is
-the same on every machine and can be committed.
+**5. Check it.**
 
-To keep the database somewhere else — shared between applications, or on a
-mounted volume — override it:
+```bash
+php artisan cairn:doctor
+```
+
+New visits carry a country immediately. Existing entries will not: the address
+they came from is long gone, which is rather the point.
+
+> **Testing locally?** You will still see nothing. `127.0.0.1` is a private
+> address, and Cairn skips those before any lookup happens. Country data only
+> appears for real traffic.
+
+### Doing it by hand
+
+If the server cannot reach MaxMind, or you would rather not put credentials on
+it, download **GeoLite2-Country.mmdb** in a browser and move it into place:
+
+```bash
+mkdir -p storage/app/geoip
+mv ~/Downloads/GeoLite2-Country.mmdb storage/app/geoip/
+```
+
+The database path defaults to `storage/app/geoip/GeoLite2-Country.mmdb`.
+**Relative paths resolve against your application root**, so that setting is the
+same on every machine and can be committed. To keep the database elsewhere —
+shared between applications, or on a mounted volume — override it:
 
 ```env
 CAIRN_GEO_DATABASE=geo/GeoLite2-Country.mmdb     # relative to the app root
 CAIRN_GEO_DATABASE=/srv/geoip/GeoLite2-City.mmdb # absolute, used as given
 ```
 
-**4. Check it.**
-
-```bash
-php artisan cairn:doctor
-```
-
-If the file is missing or unreadable, the doctor says so explicitly. That check
-exists because the failure is otherwise silent — the panel simply stays empty
-and nothing explains why.
-
-New visits will carry a country immediately. Existing entries will not: the
-address they came from is long gone, which is rather the point.
-
 ## Keeping it current
 
-GeoLite2 is updated twice weekly, and an old database drifts as address blocks
-are reallocated. Refresh it with a scheduled task, or with MaxMind's official
-[`geoipupdate`](https://github.com/maxmind/geoipupdate) tool:
+GeoLite2 is rebuilt on Tuesdays and Fridays, and an old database drifts as
+address blocks are reallocated — visitors quietly appear in the wrong country
+with nothing to indicate it. Schedule the download:
 
+```php
+// routes/console.php
+Schedule::command('cairn:geoip')->weeklyOn(3, '04:00');
 ```
-0 4 * * 3 /usr/bin/geoipupdate
-```
+
+Weekly is plenty. Anything more frequent is wasted, and MaxMind will eventually
+rate limit the account.
+
+The command is safe to run repeatedly and safe to run unattended: the existing
+database is replaced only once a new one has been downloaded, checksum-verified
+and unpacked. A network blip, a rejected key or a truncated download leaves the
+working database exactly as it was, and exits non-zero so your scheduler
+notices.
+
+`cairn:geoip` is the only part of Cairn that makes a network call, and it only
+ever runs from the command line. The lookups themselves are always local.
 
 The resolver opens the database once per process and holds it, so a file
-replaced underneath a long-running worker is picked up on its next restart.
-For `php artisan serve` or FPM this is a non-issue.
+replaced underneath a long-running worker is picked up on its next restart. For
+`php artisan serve` or FPM this is a non-issue.
 
 ## Going finer than country
 
 `privacy.geo_precision` accepts `none`, `country`, `region` and `city`. Beyond
-`country` you also need the larger **GeoLite2-City.mmdb** (~60MB).
+`country` you also need the larger **GeoLite2-City.mmdb** (~60MB):
+
+```bash
+php artisan cairn:geoip --edition=GeoLite2-City
+```
+
+That writes `GeoLite2-City.mmdb` alongside the country database rather than over
+it, so point `CAIRN_GEO_DATABASE` at the new file once it is there.
 
 Think before you do. Each step narrows the group a visitor hash could belong
 to. A country plus a browser plus a device class describes a very large number

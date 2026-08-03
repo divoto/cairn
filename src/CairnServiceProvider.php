@@ -8,6 +8,7 @@ use Divoto\Cairn\Cairn as CairnManager;
 use Divoto\Cairn\Commands\DoctorCommand;
 use Divoto\Cairn\Commands\ExportCommand;
 use Divoto\Cairn\Commands\ForgetCommand;
+use Divoto\Cairn\Commands\GeoipCommand;
 use Divoto\Cairn\Commands\PartitionCommand;
 use Divoto\Cairn\Commands\PruneCommand;
 use Divoto\Cairn\Commands\RollupCommand;
@@ -320,6 +321,7 @@ final class CairnServiceProvider extends ServiceProvider
                 DoctorCommand::class,
                 ExportCommand::class,
                 ForgetCommand::class,
+                GeoipCommand::class,
                 PartitionCommand::class,
                 PruneCommand::class,
                 RollupCommand::class,

@@ -242,6 +242,17 @@ return [
         // too, for a database shared between applications.
         'geo_database' => env('CAIRN_GEO_DATABASE', 'storage/app/geoip/GeoLite2-Country.mmdb'),
 
+        // Credentials for `php artisan cairn:geoip`, which downloads the
+        // database above. GeoLite2 is free but MaxMind requires an account:
+        // https://www.maxmind.com/en/geolite2/signup
+        //
+        // Only that command reads these. Nothing in the request path makes a
+        // network call, and the lookups themselves are always local.
+        'maxmind' => [
+            'account_id' => env('MAXMIND_ACCOUNT_ID'),
+            'license_key' => env('MAXMIND_LICENSE_KEY'),
+        ],
+
         // How precisely a resolved location may be stored: "none", "country",
         // "region" or "city". Anything finer than this is discarded before an
         // entry is built — it never reaches a column.
