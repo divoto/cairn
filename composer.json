@@ -25,6 +25,11 @@
             "role": "Developer"
         }
     ],
+    "support": {
+        "issues": "https://github.com/divoto/cairn/issues",
+        "source": "https://github.com/divoto/cairn",
+        "docs": "https://ifhighlow.com/portfolio/cairn-privacy-first-analytics-for-laravel"
+    },
     "require": {
         "php": "^8.2",
         "illuminate/cache": "^12.0|^13.0",

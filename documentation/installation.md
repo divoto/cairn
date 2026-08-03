@@ -11,6 +11,8 @@ you need to define the gate first (below).
 That is genuinely the whole install. There is no build step, no npm, and no
 configuration required to start recording.
 
+![The Cairn dashboard](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-light.png)
+
 ## What just happened
 
 - The service provider was discovered automatically.

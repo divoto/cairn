@@ -20,6 +20,8 @@ php artisan migrate
 
 That is the whole install. Visit `/cairn`.
 
+![The Cairn dashboard](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-light.png)
+
 ---
 
 ## The honest trade-off
@@ -49,20 +51,21 @@ The dashboard is server-rendered Blade. It reads entirely without JavaScript —
 filters are links, the chart is inline SVG computed on the server, and every
 chart has a table underneath it. Dark mode follows your system.
 
-```
-Overview                                        Last 30 days
-  Visitors ~1,284      Pageviews 4,109      Sessions 1,502      Bounce rate 61.2%
-       ↑ 12.4%             ↑ 8.1%              ↑ 9.9%              ↓ 3.1%
+![The dashboard in dark mode](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-dark.png)
 
-  Top routes                          Referrers
-  ─────────────────────────────       ────────────────────────────
-  pricing.index            1,204      google.com                412
-  docs.show                  918      news.ycombinator.com      288
-  orders.invoice             455      github.com                 96
-```
+Fifteen widgets ship by default. Each one is a class: reorder them, remove them,
+or add your own by subclassing `Widget` — or `DimensionWidget`, for a ranked
+table of a single dimension.
 
-The `~` on visitors is not decoration. It marks a number Cairn knows is an
-overcount, for the reason in the table above.
+![Channels, countries, devices, browsers, operating systems and campaigns](https://raw.githubusercontent.com/divoto/cairn/main/art/widgets-dark.png)
+
+The whole page, in one image:
+[light](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-full-light.png) ·
+[dark](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-full-dark.png).
+
+A `~` on a visitor count is not decoration. It marks a number Cairn knows is an
+overcount, for the reason in the table above — and the same marking is applied
+to any figure that has been scaled back up from a sample.
 
 ## Requirements
 
@@ -156,7 +159,11 @@ Rollup and prune are scheduled automatically, and skipped if you have already
 scheduled them yourself. On hosts with no cron at all, a small fraction of
 requests carry the work instead.
 
-Start with `cairn:doctor`.
+Start with `cairn:doctor`. It reports what this particular installation stores
+and exposes — observations, not errors, several of which may be entirely
+deliberate.
+
+![php artisan cairn:doctor](https://raw.githubusercontent.com/divoto/cairn/main/art/doctor.png)
 
 ## Compared with Matomo and GA4
 
@@ -250,6 +257,14 @@ everybody outside the local environment** until you define it:
 ```php
 Gate::define('viewCairn', fn ($user) => $user?->isAdmin() ?? false);
 ```
+
+## Further reading
+
+- [Installation](documentation/installation.md) · [The privacy model](documentation/privacy-model.md) · [The report builder](documentation/report-builder.md) · [Geolocation](documentation/geolocation.md)
+- A longer write-up, with the full configuration reference and more screenshots:
+  [ifhighlow.com/portfolio/cairn-privacy-first-analytics-for-laravel](https://ifhighlow.com/portfolio/cairn-privacy-first-analytics-for-laravel)
+- The release announcement:
+  [Introducing Cairn](https://ifhighlow.com/blog/introducing-cairn-privacy-first-analytics-for-laravel)
 
 ## Contributing
 
