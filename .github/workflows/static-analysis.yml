@@ -1,0 +1,61 @@
+name: static analysis
+
+on:
+  push:
+    branches: [main, first-release]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-analysis-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpstan:
+    name: PHPStan level 9
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          composer-options: --prefer-dist --no-interaction
+
+      # CLAUDE.md: level 9, zero baseline entries. A failure here is a design
+      # problem to fix, not an ignore to add.
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --error-format=github --no-progress
+
+  rector:
+    name: Rector
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sqlite3, pdo_sqlite
+          coverage: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+        with:
+          composer-options: --prefer-dist --no-interaction
+
+      - name: Run Rector as a check
+        run: vendor/bin/rector process --dry-run --no-progress-bar

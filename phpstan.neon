@@ -1,0 +1,32 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/pestphp/pest/extension.neon
+
+parameters:
+    level: 9
+
+    # `config` is deliberately not analysed. Larastan's
+    # noEnvCallsOutsideOfConfig rule resolves the config directory against an
+    # application base path, so inside a package it flags config/cairn.php —
+    # the one file where CLAUDE.md *requires* env(). The rule is inverted here
+    # rather than useful. The ban on env() elsewhere is enforced by
+    # tests/ArchTest.php, which scans src/ directly.
+    paths:
+        - src
+        - database
+        - tests
+
+    # Pest's architecture DSL cannot be modelled statically: arch() returns a
+    # TestCall whose expect() resolves through a union @mixin and yields a
+    # different expectation type than the arch assertions are declared on.
+    # The file is excluded from analysis rather than suppressed error by error.
+    excludePaths:
+        analyse:
+            - tests/ArchTest.php
+
+    # CLAUDE.md: PHPStan level 9, zero baseline entries. If the analyser cannot
+    # be satisfied, change the design — do not add an ignore here.
+    ignoreErrors: []
+
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: true
