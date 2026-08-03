@@ -9,7 +9,9 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
-## [Unreleased]
+## [0.1.0] - 2026-08-03
+
+First public release.
 
 ### Added
 
@@ -43,6 +45,13 @@ until the package has run in production for a meaningful period.
   gate that denies everybody outside the local environment by default. Fully
   readable with JavaScript disabled, dark mode, every chart backed by a table.
   Fifteen widgets, extensible in one class.
+- **Country reporting.** Optional and off by default. Lookups run against a
+  local MaxMind database — never a third-party request per pageview — with the
+  address masked before the resolver sees it and the result reduced to the
+  configured precision before an entry is built. `cairn:geoip` downloads the
+  database, verifies it against MaxMind's published checksum and installs it,
+  replacing a working database only once a new one is known good. Any class
+  implementing `GeoResolver` can be used instead.
 - **Data-subject tooling.** `cairn:forget` erases a subject and rebuilds the
   aggregates their rows contributed to. `cairn:export` produces a subject
   access request as JSON. `cairn:doctor` reports what an installation stores
@@ -61,3 +70,5 @@ until the package has run in production for a meaningful period.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[0.1.0]: https://github.com/divoto/cairn/releases/tag/v0.1.0

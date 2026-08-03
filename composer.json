@@ -1,6 +1,6 @@
 {
     "name": "divoto/cairn",
-    "description": "Cairn — privacy-first, self-hosted web analytics for Laravel. Cookieless pageview, session and event tracking with a built-in dashboard. A GDPR-friendly alternative to Google Analytics and Matomo, integrated with your Eloquent models.",
+    "description": "Cairn — privacy-first, self-hosted web analytics for Laravel. Cookieless pageview, session and event tracking with a built-in dashboard. No consent banner required in the default configuration. A self-hosted alternative to Google Analytics and Matomo, integrated with your Eloquent models.",
     "keywords": [
         "laravel",
         "analytics",
