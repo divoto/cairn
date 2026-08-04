@@ -17,6 +17,7 @@ use Divoto\Cairn\Integrations\Pulse\LiveVisitors as PulseLiveVisitors;
 use Divoto\Cairn\Integrations\Pulse\TopRoutes as PulseTopRoutes;
 use Divoto\Cairn\Widgets\Filters;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -292,6 +293,36 @@ it('registers both Pulse cards when Pulse is present and enabled', function (): 
 
     expect(componentRegistered('cairn.live-visitors'))->toBeTrue()
         ->and(componentRegistered('cairn.top-routes'))->toBeTrue();
+});
+
+/**
+ * The other half of the 0.1.2 fix. The cards' views moved out of `cairn::` and
+ * into a namespace registered only when Pulse is wanted, so the deploy of an
+ * application without Pulse stopped failing — and this is the assertion that
+ * the move did not simply hide them from the applications that do have it.
+ */
+it('renders both Pulse cards from their own view namespace', function (): void {
+    seedForIntegrations();
+
+    config()->set('cairn.pulse.enabled', true);
+    app(Integrations::class)->register();
+
+    // Rendered through the view factory rather than through Livewire: both
+    // cards are #[Lazy], so a plain component render returns the placeholder
+    // and never reaches the view this test is about. What has to be proved is
+    // that the file resolves under the new namespace *and* that Pulse's own
+    // Blade components still resolve inside it.
+    $views = app(ViewFactory::class);
+
+    $live = $views->make('cairn-pulse::live-visitors', ['visitors' => 3])->render();
+
+    $routes = $views->make('cairn-pulse::top-routes', [
+        'routes' => app(TopRoutes::class)->rows(new Filters(range: 'today')),
+    ])->render();
+
+    expect($live)->toContain('Live visitors')
+        ->and($routes)->toContain('Top routes')
+        ->and($routes)->toContain('pricing.index');
 });
 
 it('registers no Pulse cards when they are switched off', function (): void {

@@ -7,6 +7,7 @@ use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
+use Divoto\Cairn\Tests\StandaloneTestCase;
 use Divoto\Cairn\Tests\TestCase;
 use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
 use Illuminate\Database\DatabaseManager;
@@ -18,13 +19,23 @@ use Pest\Support\HigherOrderTapProxy;
 | Test case binding
 |--------------------------------------------------------------------------
 |
-| Every test under tests/ runs against the testbench application defined in
-| TestCase. ArchTest.php needs no application, but binding it here is
-| harmless and keeps the configuration to a single line.
+| Feature and Unit run against the testbench application defined in TestCase,
+| which registers Livewire and Pulse so the optional adapters are tested
+| rather than shipped blind.
+|
+| Deployment runs against StandaloneTestCase — Cairn and nothing else — so it
+| can prove the package survives `view:cache` in an application that installed
+| none of them. It cannot share a directory with the others: Pest binds one
+| test case per path, and an application with every optional package present
+| cannot fail the way a real installation does.
+|
+| ArchTest.php is bound to neither. Arch tests assert on source, not on a
+| booted application, and never needed one.
 |
 */
 
-pest()->extend(TestCase::class)->in(__DIR__);
+pest()->extend(TestCase::class)->in('Feature', 'Unit');
+pest()->extend(StandaloneTestCase::class)->in('Deployment');
 
 /*
 |--------------------------------------------------------------------------

@@ -28,7 +28,7 @@ final class TopRoutes extends Card
 {
     public function render(): View
     {
-        return app(ViewFactory::class)->make('cairn::pulse.top-routes', [
+        return app(ViewFactory::class)->make('cairn-pulse::top-routes', [
             'routes' => $this->routes(),
         ]);
     }

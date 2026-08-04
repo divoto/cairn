@@ -71,11 +71,11 @@ abstract class TestCase extends Orchestra
         $config->set('database.redis.client', 'phpredis');
         $config->set('database.redis.default', [
             'host' => Env::get('REDIS_HOST') ?: '127.0.0.1',
-            'port' => (int) (Env::get('REDIS_PORT') ?: 6379),
+            'port' => $this->envInt('REDIS_PORT', 6379),
             'password' => Env::get('REDIS_PASSWORD') ?: null,
             // A high database number, so a developer running the suite against
             // a shared Redis does not flush their application's keys.
-            'database' => (int) (Env::get('REDIS_DB') ?: 15),
+            'database' => $this->envInt('REDIS_DB', 15),
         ]);
 
         $config->set('cairn.enabled', true);
@@ -84,5 +84,18 @@ abstract class TestCase extends Orchestra
         // installed here. ConfigurationTest asserts the real default — this
         // only makes the routes resolvable in the test application.
         $config->set('cairn.api.middleware', ['api']);
+    }
+
+    /**
+     * An environment variable read as an integer, or a default.
+     *
+     * Env::get() is honestly typed as mixed — a .env can hold anything — and a
+     * bare cast of mixed is exactly the sort of thing level 9 exists to catch.
+     */
+    private function envInt(string $key, int $default): int
+    {
+        $value = Env::get($key);
+
+        return is_numeric($value) ? (int) $value : $default;
     }
 }
