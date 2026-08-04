@@ -114,6 +114,13 @@ php artisan vendor:publish --tag=cairn-privacy     # privacy notice + opt-out st
 If you publish the migrations, call `CairnServiceProvider::ignoreMigrations()`
 from a service provider, or the same tables will be created twice.
 
+The Pulse cards have a tag of their own, `cairn-pulse-views`, and are
+deliberately not part of `cairn-views`. They are the only views Cairn ships
+that cannot be compiled without an optional package installed — they use
+Pulse's `<x-pulse::card>` components — so publishing them into an application
+without Pulse would put them on a path `view:cache` walks, and break the
+deployment. Publish them only if you have Pulse and want to restyle the cards.
+
 **A note on publishing config.** Laravel merges only top-level configuration
 keys, so a published `config/cairn.php` will not pick up new nested options
 added in later versions. Re-read the packaged file after upgrading, or leave

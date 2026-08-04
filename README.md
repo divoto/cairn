@@ -233,7 +233,7 @@ Every option is commented. The two above carry a longer explanation of what
 they change.
 
 Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
-`cairn-assets`, `cairn-privacy`, `cairn-inertia`.
+`cairn-assets`, `cairn-privacy`, `cairn-inertia`, `cairn-pulse-views`.
 
 ## Country reporting
 

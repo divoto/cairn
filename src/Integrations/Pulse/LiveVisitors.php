@@ -24,7 +24,7 @@ final class LiveVisitors extends Card
 {
     public function render(): View
     {
-        return app(ViewFactory::class)->make('cairn::pulse.live-visitors', [
+        return app(ViewFactory::class)->make('cairn-pulse::live-visitors', [
             'visitors' => app(Cairn::class)->live(),
         ]);
     }

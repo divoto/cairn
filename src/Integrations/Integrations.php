@@ -26,6 +26,20 @@ use Throwable;
  */
 final readonly class Integrations
 {
+    /**
+     * Absolute path to the Pulse cards' Blade views.
+     *
+     * Deliberately outside `resources/views`, which is registered as the
+     * `cairn::` namespace unconditionally. See {@see wantsPulse()}.
+     *
+     * `pulse-views` rather than `views-pulse` on purpose: `view:cache` drops
+     * any view path that string-prefixes another, so a sibling named
+     * `views-pulse` would be skipped as though it sat inside `views` — the
+     * command would pass by accident rather than by design, and the accident
+     * would end the moment that check learned about trailing slashes.
+     */
+    public const PULSE_VIEWS_PATH = __DIR__.'/../../resources/pulse-views';
+
     public function __construct(
         private Config $config,
     ) {}
@@ -75,6 +89,27 @@ final readonly class Integrations
     }
 
     /**
+     * Whether the Pulse cards should exist at all.
+     *
+     * Public because the service provider registers their view namespace and
+     * has to ask, and because the answer must be the same one
+     * {@see registerPulse()} acts on: a namespace registered for cards that
+     * are never registered is the bug this method exists to make impossible.
+     * Asking through here rather than for `Laravel\Pulse` directly is what
+     * keeps every mention of the package inside this namespace.
+     *
+     * `cairn.enabled` counts, and is checked here rather than only in
+     * {@see register()}: a disabled Cairn must add nothing to the application
+     * at all, view namespaces included.
+     */
+    public function wantsPulse(): bool
+    {
+        return $this->config->get('cairn.enabled') === true
+            && $this->hasPulse()
+            && $this->config->get('cairn.pulse.enabled') === true;
+    }
+
+    /**
      * The Livewire dashboard, when Livewire is present and selected.
      */
     private function registerLivewire(): void
@@ -88,10 +123,20 @@ final readonly class Integrations
 
     /**
      * The two Pulse cards, when Pulse is present and enabled.
+     *
+     * Their views are the one part of Cairn that cannot be compiled without an
+     * optional package installed — both use Pulse's own `<x-pulse::card>`
+     * components — so they sit in a namespace the provider registers only when
+     * {@see wantsPulse()} agrees. `view:cache` compiles every Blade file in
+     * every registered view path with no regard for configuration or class
+     * existence, so an unconditional namespace failed the command, and
+     * therefore the deployment, of every application that had Cairn without
+     * Pulse. Guarding the registration is what makes that impossible; guarding
+     * the render alone was not enough, because nothing was rendering.
      */
     private function registerPulse(): void
     {
-        if (! $this->hasPulse() || $this->config->get('cairn.pulse.enabled') !== true) {
+        if (! $this->wantsPulse()) {
             return;
         }
 

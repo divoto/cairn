@@ -9,6 +9,49 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
+## [0.1.2] - 2026-08-04
+
+Fixes deployment on any application that installed Cairn without Pulse.
+
+### Fixed
+
+- **`php artisan view:cache` failed with `Unable to locate a class or view for
+  component [pulse::card-header]`.** Cairn's two Pulse cards use Pulse's own
+  `<x-pulse::card>` components, and they lived in `resources/views`, which is
+  registered as the `cairn::` view namespace unconditionally. `view:cache`
+  compiles every Blade file under every registered view path with no regard for
+  configuration or class existence, so the cards were compiled in applications
+  that had never installed Pulse and the command threw. Nothing was broken at
+  runtime — the integration was correctly guarded and never reached — but
+  `view:cache` is in Forge's default deploy script and in most Dockerfiles, so
+  the deployment failed.
+
+  The cards now live in `resources/pulse-views` under their own `cairn-pulse::`
+  namespace, registered inside the same guard that registers the components:
+  only when Pulse is installed *and* `cairn.pulse.enabled` is true. Setting that
+  flag to `false` did not help before this release, because compilation never
+  consulted it.
+
+### Changed
+
+- The Pulse cards publish under a new `cairn-pulse-views` tag rather than with
+  `cairn-views`. Publishing them into an application without Pulse would put
+  them back on a compiled path — the application's own — and break the same
+  deploy from the other direction.
+
+### Added
+
+- `tests/Deployment/`, which runs `view:cache` and `config:cache` against an
+  application holding Cairn and nothing else, and asserts that every view in the
+  unconditionally registered namespace compiles with no optional package
+  present. Four of its five tests fail without the fix above.
+
+### Upgrading
+
+Nothing to do. If you published the views with `--tag=cairn-views` before this
+release, delete `resources/views/vendor/cairn/pulse/` — those two files are the
+ones that break `view:cache`, and they are no longer part of that tag.
+
 ## [0.1.1] - 2026-08-04
 
 Fixes PostgreSQL, on which no release before this one recorded anything.
@@ -114,6 +157,8 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[0.1.2]: https://github.com/divoto/cairn/releases/tag/v0.1.2
 
 [0.1.1]: https://github.com/divoto/cairn/releases/tag/v0.1.1
 

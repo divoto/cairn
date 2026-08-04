@@ -412,7 +412,23 @@ final class CairnServiceProvider extends ServiceProvider
      */
     private function registerIntegrations(): void
     {
-        $this->app->make(Integrations::class)->register();
+        $integrations = $this->app->make(Integrations::class);
+
+        // The Pulse cards' views, and only when the cards themselves are being
+        // registered. They use Pulse's own Blade components, so a namespace
+        // registered unconditionally would break `view:cache` — and therefore
+        // the deployment — of every application that has Cairn without Pulse.
+        //
+        // Registered here rather than alongside the components because
+        // `loadViewsFrom` is what makes a published override win: it looks in
+        // the application's own `resources/views/vendor` first, which a bare
+        // `addNamespace` would skip, silently ignoring anything published
+        // under the `cairn-pulse-views` tag.
+        if ($integrations->wantsPulse()) {
+            $this->loadViewsFrom(Integrations::PULSE_VIEWS_PATH, 'cairn-pulse');
+        }
+
+        $integrations->register();
     }
 
     /**
@@ -448,6 +464,16 @@ final class CairnServiceProvider extends ServiceProvider
             $this->publishes([
                 self::VIEWS_PATH => $this->app->resourcePath('views/vendor/cairn'),
             ], 'cairn-views');
+
+            // The Pulse cards publish under their own tag, and deliberately not
+            // as part of `cairn-views`. They are the only views Cairn ships
+            // that cannot be compiled without an optional package installed, so
+            // publishing them into an application without Pulse would break
+            // `view:cache` — the same failure the separate namespace exists to
+            // prevent. Nobody asks for this tag by accident.
+            $this->publishes([
+                Integrations::PULSE_VIEWS_PATH => $this->app->resourcePath('views/vendor/cairn-pulse'),
+            ], 'cairn-pulse-views');
 
             $this->publishes([
                 self::ASSETS_PATH => $this->app->publicPath('vendor/cairn'),
