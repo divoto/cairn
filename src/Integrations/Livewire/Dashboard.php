@@ -83,7 +83,11 @@ final class Dashboard extends Component
             }
         }
 
-        return app(ViewFactory::class)->make('cairn::dashboard', [
+        // The component's own view, not 'cairn::dashboard': that one carries
+        // the page layout, and Livewire allows a component exactly one root
+        // element. Both render the same partial, so the two dashboards cannot
+        // drift apart.
+        return app(ViewFactory::class)->make('cairn::livewire.dashboard', [
             'filters' => $filters,
             'widgets' => array_values(array_filter(
                 $widgets,
