@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Identity;
 
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Data\Session;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -95,7 +96,8 @@ final readonly class SessionResolver
         ?string $url = null,
         array $acquisition = [],
     ): void {
-        $table = $this->connection()->table(Tables::sessions());
+        $connection = $this->connection();
+        $table = $connection->table(Tables::sessions());
 
         if ($session->isNew) {
             // Acquisition is written once, on the first request of the visit,
@@ -103,8 +105,8 @@ final readonly class SessionResolver
             // attribute the visit to wherever the visitor happened to be when
             // they left.
             $table->insertOrIgnore(array_merge([
-                'id' => $session->id,
-                'visitor' => $session->visitor,
+                'id' => Binary::bind($connection, $session->id),
+                'visitor' => Binary::bind($connection, $session->visitor),
                 'started_at' => $session->startedAt->toDateTimeString(),
                 'last_activity_at' => $at->toDateTimeString(),
                 'page_count' => 1,
@@ -118,9 +120,9 @@ final readonly class SessionResolver
             return;
         }
 
-        $table->where('id', $session->id)->update([
+        $table->where('id', Binary::bind($connection, $session->id))->update([
             'last_activity_at' => $at->toDateTimeString(),
-            'page_count' => $this->connection()->raw('page_count + 1'),
+            'page_count' => $connection->raw('page_count + 1'),
             'duration_seconds' => max(0, $at->getTimestamp() - $session->startedAt->getTimestamp()),
             'exit_url' => $url,
             // A visit stops being a bounce the moment a second page arrives.
@@ -184,9 +186,11 @@ final readonly class SessionResolver
     ): ?Session {
         $cutoff = $at->subMinutes(self::INACTIVITY_MINUTES);
 
-        $row = $this->connection()
+        $connection = $this->connection();
+
+        $row = $connection
             ->table(Tables::sessions())
-            ->where('visitor', $visitor)
+            ->where('visitor', Binary::bind($connection, $visitor))
             ->where('tenant_id', $this->tenantValue($tenantId))
             ->where('last_activity_at', '>=', $cutoff->toDateTimeString())
             ->orderByDesc('last_activity_at')
@@ -208,7 +212,7 @@ final readonly class SessionResolver
         }
 
         return new Session(
-            id: $this->binary($id),
+            id: Binary::read($id),
             visitor: $visitor,
             startedAt: CarbonImmutable::parse($startedAt),
             lastActivityAt: CarbonImmutable::parse($lastActivityAt),
@@ -216,20 +220,6 @@ final readonly class SessionResolver
             isNew: false,
             tenantId: $tenantId,
         );
-    }
-
-    /**
-     * Read a binary column back as a string.
-     *
-     * PostgreSQL returns `bytea` as a stream; the others return a string.
-     */
-    private function binary(mixed $value): string
-    {
-        if (is_resource($value)) {
-            return (string) stream_get_contents($value);
-        }
-
-        return is_string($value) ? $value : '';
     }
 
     /**

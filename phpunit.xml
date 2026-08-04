@@ -25,6 +25,14 @@
         <!-- CLAUDE.md: SQLite is the default test target. MySQL, MariaDB and
              PostgreSQL run as separate CI jobs by overriding these. -->
         <env name="DB_CONNECTION" value="testing"/>
+
+        <!-- The salt lives in the cache, so a cache store the testbench
+             application has no table for takes VisitorHasher down — and
+             TrackPageView swallows the failure, so it surfaces as pageviews
+             that were never recorded rather than as an error. Pinned here
+             because testbench's own skeleton .env sets it to `database`.
+             Not forced: a CI job may still override it. -->
+        <env name="CACHE_STORE" value="array"/>
         <env name="CAIRN_ENABLED" value="true"/>
         <env name="CAIRN_DRIVER" value="database"/>
     </php>

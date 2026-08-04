@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Counting;
 
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -30,10 +31,12 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
     public function add(string $day, string $dimension, string $visitor): void
     {
         try {
-            $this->connection()->table(Tables::visitorDays())->insertOrIgnore([
+            $connection = $this->connection();
+
+            $connection->table(Tables::visitorDays())->insertOrIgnore([
                 'day' => $day,
-                'dimension_hash' => $this->hash($dimension),
-                'visitor' => $visitor,
+                'dimension_hash' => Binary::bind($connection, $this->hash($dimension)),
+                'visitor' => Binary::bind($connection, $visitor),
                 'tenant_id' => '',
             ]);
         } catch (Throwable $e) {
@@ -44,10 +47,12 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
     public function count(string $day, string $dimension): int
     {
         try {
-            return $this->connection()
+            $connection = $this->connection();
+
+            return $connection
                 ->table(Tables::visitorDays())
                 ->where('day', $day)
-                ->where('dimension_hash', $this->hash($dimension))
+                ->where('dimension_hash', Binary::bind($connection, $this->hash($dimension)))
                 ->count();
         } catch (Throwable $e) {
             report($e);

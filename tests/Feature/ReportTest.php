@@ -250,7 +250,7 @@ it('computes a rate from its components at the level it is displayed', function 
                 'type' => $type,
                 'aggregate' => 'overall',
                 'key' => '[]',
-                'key_hash' => substr(hash('sha256', '[]', true), 0, 16),
+                'key_hash' => binaryColumn(substr(hash('sha256', '[]', true), 0, 16)),
                 'value' => $value,
                 'tenant_id' => '',
             ]);

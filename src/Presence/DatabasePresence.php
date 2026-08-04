@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Presence;
 
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Contracts\Presence;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -34,9 +35,11 @@ final readonly class DatabasePresence implements Presence
     public function touch(string $visitor, ?string $page = null): void
     {
         try {
-            $this->connection()->table(Tables::presence())->upsert(
+            $connection = $this->connection();
+
+            $connection->table(Tables::presence())->upsert(
                 [[
-                    'visitor' => $visitor,
+                    'visitor' => Binary::bind($connection, $visitor),
                     'page' => $page,
                     'last_seen_at' => CarbonImmutable::now('UTC')->toDateTimeString(),
                     'tenant_id' => '',
@@ -78,7 +81,7 @@ final readonly class DatabasePresence implements Presence
                         // Hex, not raw bytes: this crosses into a view, and a
                         // binary string in HTML is a rendering accident
                         // waiting to happen.
-                        'visitor' => bin2hex($this->binary($data['visitor'] ?? '')),
+                        'visitor' => bin2hex(Binary::read($data['visitor'] ?? '')),
                         'page' => is_string($data['page'] ?? null) ? $data['page'] : null,
                         'last_seen_at' => is_string($data['last_seen_at'] ?? null) ? $data['last_seen_at'] : '',
                     ];
@@ -128,15 +131,6 @@ final readonly class DatabasePresence implements Presence
     private function cutoff(): string
     {
         return CarbonImmutable::now('UTC')->subMinutes(self::WINDOW_MINUTES)->toDateTimeString();
-    }
-
-    private function binary(mixed $value): string
-    {
-        if (is_resource($value)) {
-            return (string) stream_get_contents($value);
-        }
-
-        return is_string($value) ? $value : '';
     }
 
     private function connection(): Connection

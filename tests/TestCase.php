@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Tests;
 
 use Divoto\Cairn\CairnServiceProvider;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Env;
 use Laravel\Pulse\PulseServiceProvider;
 use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -62,14 +63,19 @@ abstract class TestCase extends Orchestra
         // The driver-parity suite exercises the Redis drivers against a real
         // server. A conditionally-skipped driver is a driver nobody notices
         // breaking, so this is configured rather than optional.
+        // Read through Env rather than getenv(): a .env writes booleans and
+        // nulls as the words "true" and "null", and Env applies the casting
+        // that turns them back into values. getenv() would hand phpredis the
+        // four-character string "null" as a password and it would dutifully
+        // send AUTH to a server that has none.
         $config->set('database.redis.client', 'phpredis');
         $config->set('database.redis.default', [
-            'host' => getenv('REDIS_HOST') ?: '127.0.0.1',
-            'port' => (int) (getenv('REDIS_PORT') ?: 6379),
-            'password' => getenv('REDIS_PASSWORD') ?: null,
+            'host' => Env::get('REDIS_HOST') ?: '127.0.0.1',
+            'port' => (int) (Env::get('REDIS_PORT') ?: 6379),
+            'password' => Env::get('REDIS_PASSWORD') ?: null,
             // A high database number, so a developer running the suite against
             // a shared Redis does not flush their application's keys.
-            'database' => (int) (getenv('REDIS_DB') ?: 15),
+            'database' => (int) (Env::get('REDIS_DB') ?: 15),
         ]);
 
         $config->set('cairn.enabled', true);

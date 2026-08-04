@@ -137,7 +137,7 @@ it('erases nothing when the confirmation is declined', function (): void {
     app(DatabaseManager::class)->connection(Tables::connection())->table(Tables::entries())->insert([
         'occurred_at' => CarbonImmutable::now('UTC')->toDateTimeString(),
         'type' => 'pageview',
-        'visitor' => $visitor,
+        'visitor' => binaryColumn($visitor),
         'tenant_id' => '',
     ]);
 

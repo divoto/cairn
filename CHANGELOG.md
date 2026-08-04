@@ -9,6 +9,50 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
+## [0.1.1] - 2026-08-04
+
+Fixes PostgreSQL, on which no release before this one recorded anything.
+
+### Fixed
+
+- **PostgreSQL recorded nothing at all.** Cairn stores visitor, session and
+  dimension identity as raw 16-byte hashes. Laravel binds every string
+  parameter as `PDO::PARAM_STR`, and PostgreSQL validates text parameters
+  against the database encoding — so a raw hash, which is almost never valid
+  UTF-8, was rejected with `SQLSTATE[22021]` rather than stored. Because every
+  driver on the request path swallows its own exceptions so that analytics can
+  never break a response, the failure appeared only in the application log and
+  all five tables stayed empty. MySQL, MariaDB and SQLite accept the identical
+  parameter, which is why three engines hid it.
+
+  Binary values are now emitted as `'\x…'::bytea` literals on PostgreSQL and
+  bound as before on every other engine — see `Divoto\Cairn\Support\Binary`.
+  This covers the entry writer, the session resolver, the database unique
+  counter, the database presence driver, the beacon endpoint and the
+  data-subject erase and export paths.
+
+- **Rollups failed on PostgreSQL.** `sum(case when is_bounce = 1 …)` compared a
+  real boolean against an integer, which PostgreSQL rejects as a type error
+  rather than treating as false. Bounce and session-duration rollups now test
+  the column for truth, which is portable across all four engines.
+
+- **Subject-access exports were malformed on PostgreSQL.** `cairn:export` read
+  binary columns without decoding them; PostgreSQL returns `bytea` as a stream
+  resource, which `json_encode` cannot represent.
+
+### Added
+
+- `tests/Feature/BinaryColumnsTest.php`, which asserts that each write
+  *landed* rather than that it did not throw — the distinction that let this
+  ship. Nine of its ten tests fail against PostgreSQL without the fixes above.
+
+### Note for existing PostgreSQL installations
+
+No data migration is needed, and no schema changed: the tables were correct all
+along and are simply empty. Historical traffic from before this release was
+never written and cannot be recovered. `cairn:doctor` and the dashboard will
+begin reporting as soon as the first request is recorded.
+
 ## [0.1.0] - 2026-08-03
 
 First public release.
@@ -70,5 +114,7 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[0.1.1]: https://github.com/divoto/cairn/releases/tag/v0.1.1
 
 [0.1.0]: https://github.com/divoto/cairn/releases/tag/v0.1.0
