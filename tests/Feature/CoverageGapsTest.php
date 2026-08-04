@@ -435,7 +435,7 @@ it('scopes a rollup and a report to a tenant', function (): void {
             $connection->table(Tables::entries())->insert([
                 'occurred_at' => $at->addMinutes($index)->toDateTimeString(),
                 'type' => 'pageview',
-                'visitor' => random_bytes(16),
+                'visitor' => binaryColumn(random_bytes(16)),
                 'route' => 'pricing.index',
                 'tenant_id' => $tenant,
             ]);

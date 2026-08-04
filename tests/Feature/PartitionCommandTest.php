@@ -41,7 +41,7 @@ it('leaves the tables untouched when it cannot partition', function (): void {
     $connection->table(Tables::entries())->insert([
         'occurred_at' => '2026-01-01 12:00:00',
         'type' => 'pageview',
-        'visitor' => random_bytes(16),
+        'visitor' => binaryColumn(random_bytes(16)),
     ]);
 
     expect($connection->table(Tables::entries())->count())->toBe(1);

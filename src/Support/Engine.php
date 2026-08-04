@@ -55,6 +55,20 @@ final class Engine
     }
 
     /**
+     * Whether this engine refuses a raw binary string bound as a parameter.
+     *
+     * PostgreSQL validates text parameters against the database encoding, so a
+     * raw hash bound as `PDO::PARAM_STR` — which is what Laravel binds every
+     * string as — is rejected with SQLSTATE 22021 rather than stored. MySQL,
+     * MariaDB and SQLite accept it. {@see Binary} is
+     * where the difference is dealt with; this is only the name of it.
+     */
+    public static function rejectsBinaryParameters(string $driver): bool
+    {
+        return $driver === 'pgsql';
+    }
+
+    /**
      * Whether this engine treats NULLs as distinct within a unique index.
      *
      * All four do, which is why no Cairn table puts a nullable column in a

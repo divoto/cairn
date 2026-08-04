@@ -162,7 +162,7 @@ it('rejects a duplicate aggregate row for an untenanted installation', function 
         'type' => 'pageviews',
         'aggregate' => 'sum',
         'key' => '[]',
-        'key_hash' => random_bytes(16),
+        'key_hash' => binaryColumn(random_bytes(16)),
         'value' => 10,
         'tenant_id' => '',
     ];
@@ -178,8 +178,8 @@ it('counts a visitor once per day per dimension however often they are added', f
 
     $row = [
         'day' => '2026-01-01',
-        'dimension_hash' => random_bytes(16),
-        'visitor' => random_bytes(16),
+        'dimension_hash' => binaryColumn(random_bytes(16)),
+        'visitor' => binaryColumn(random_bytes(16)),
         'tenant_id' => '',
     ];
 
@@ -196,7 +196,7 @@ it('keeps one presence row per visitor per tenant', function (): void {
 
     foreach (['/one', '/two', '/three'] as $page) {
         $connection->table(Tables::presence())->upsert(
-            [['visitor' => $visitor, 'page' => $page, 'last_seen_at' => '2026-01-01 00:00:00', 'tenant_id' => '']],
+            [['visitor' => binaryColumn($visitor), 'page' => $page, 'last_seen_at' => '2026-01-01 00:00:00', 'tenant_id' => '']],
             ['visitor', 'tenant_id'],
             ['page', 'last_seen_at'],
         );
@@ -222,7 +222,7 @@ it('round-trips a raw 16-byte hash without mangling it', function (): void {
     $connection->table(Tables::entries())->insert([
         'occurred_at' => '2026-01-01 12:00:00',
         'type' => 'pageview',
-        'visitor' => $visitor,
+        'visitor' => binaryColumn($visitor),
     ]);
 
     $stored = $connection->table(Tables::entries())->value('visitor');

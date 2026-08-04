@@ -26,7 +26,7 @@ function seedRawEntry(string $at): void
     table('entries')->insert([
         'occurred_at' => $at,
         'type' => 'pageview',
-        'visitor' => random_bytes(16),
+        'visitor' => binaryColumn(random_bytes(16)),
         'tenant_id' => '',
     ]);
 }
@@ -34,8 +34,8 @@ function seedRawEntry(string $at): void
 function seedSession(string $startedAt): void
 {
     table('sessions')->insert([
-        'id' => random_bytes(16),
-        'visitor' => random_bytes(16),
+        'id' => binaryColumn(random_bytes(16)),
+        'visitor' => binaryColumn(random_bytes(16)),
         'started_at' => $startedAt,
         'last_activity_at' => $startedAt,
         'page_count' => 1,
@@ -110,7 +110,7 @@ it('never removes rollups by default', function (): void {
         'type' => 'pageviews',
         'aggregate' => 'overall',
         'key' => '[]',
-        'key_hash' => random_bytes(16),
+        'key_hash' => binaryColumn(random_bytes(16)),
         'value' => 100,
         'tenant_id' => '',
     ]);
@@ -130,7 +130,7 @@ it('removes rollups only when retention is explicitly configured', function (): 
         'type' => 'pageviews',
         'aggregate' => 'overall',
         'key' => '[]',
-        'key_hash' => random_bytes(16),
+        'key_hash' => binaryColumn(random_bytes(16)),
         'value' => 100,
         'tenant_id' => '',
     ]);
@@ -158,14 +158,14 @@ it('keeps everything when retention is null', function (): void {
 
 it('removes stale presence rows', function (): void {
     table('presence')->insert([
-        'visitor' => random_bytes(16),
+        'visitor' => binaryColumn(random_bytes(16)),
         'page' => '/old',
         'last_seen_at' => CarbonImmutable::now('UTC')->subHour()->toDateTimeString(),
         'tenant_id' => '',
     ]);
 
     table('presence')->insert([
-        'visitor' => random_bytes(16),
+        'visitor' => binaryColumn(random_bytes(16)),
         'page' => '/now',
         'last_seen_at' => CarbonImmutable::now('UTC')->toDateTimeString(),
         'tenant_id' => '',

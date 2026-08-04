@@ -5,7 +5,11 @@ declare(strict_types=1);
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\EntryType;
+use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Tests\TestCase;
+use Illuminate\Contracts\Database\Query\Expression as ExpressionContract;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Collection;
 use Pest\Support\HigherOrderTapProxy;
 
@@ -60,11 +64,22 @@ function cairnTest(): TestCase
  */
 function binaryValue(mixed $value): string
 {
-    if (is_resource($value)) {
-        return (string) stream_get_contents($value);
-    }
+    return Binary::read($value);
+}
 
-    return is_string($value) ? $value : '';
+/**
+ * Prepare a raw hash to be written to a binary column by a fixture.
+ *
+ * Fixtures write these columns with the query builder directly, so they need
+ * the same handling the package's own writes get — see {@see Binary}. Without
+ * it a fixture inserts happily on three engines and fails on PostgreSQL,
+ * which is exactly the failure mode this suite exists to catch.
+ */
+function binaryColumn(string $value): string|ExpressionContract
+{
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    return Binary::bind($connection, $value) ?? $value;
 }
 
 /**

@@ -9,6 +9,7 @@ use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Privacy\PrivacyGate;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recording\EntryFactory;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -161,9 +162,11 @@ final readonly class CollectController
      */
     private function recentEntryId(string $visitor, string $url): int|string|null
     {
-        $id = $this->connection()
+        $connection = $this->connection();
+
+        $id = $connection
             ->table(Tables::entries())
-            ->where('visitor', $visitor)
+            ->where('visitor', Binary::bind($connection, $visitor))
             ->where('url', $url)
             ->where('occurred_at', '>=', CarbonImmutable::now('UTC')->subMinutes(self::WINDOW_MINUTES)->toDateTimeString())
             ->whereNull('time_on_page')

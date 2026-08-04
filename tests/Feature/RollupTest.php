@@ -266,8 +266,8 @@ it('rolls up sessions, bounces and session duration', function (): void {
 
     foreach ([[true, 0], [true, 0], [false, 240]] as $index => [$bounced, $seconds]) {
         $connection->table(Tables::sessions())->insert([
-            'id' => random_bytes(16),
-            'visitor' => random_bytes(16),
+            'id' => binaryColumn(random_bytes(16)),
+            'visitor' => binaryColumn(random_bytes(16)),
             'started_at' => '2026-03-14 09:0'.$index.':00',
             'last_activity_at' => '2026-03-14 09:0'.$index.':00',
             'page_count' => $bounced ? 1 : 4,
@@ -295,8 +295,8 @@ it('rolls up sessions, bounces and session duration', function (): void {
 it('attributes a session to the bucket it started in', function (): void {
     app(DatabaseManager::class)->connection(Tables::connection())
         ->table(Tables::sessions())->insert([
-            'id' => random_bytes(16),
-            'visitor' => random_bytes(16),
+            'id' => binaryColumn(random_bytes(16)),
+            'visitor' => binaryColumn(random_bytes(16)),
             'started_at' => '2026-03-14 23:50:00',
             'last_activity_at' => '2026-03-15 00:10:00',
             'page_count' => 3,

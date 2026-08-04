@@ -7,6 +7,7 @@ namespace Divoto\Cairn\Maintenance;
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -42,14 +43,14 @@ final readonly class Eraser
      */
     public function forgetVisitor(string $visitor): array
     {
-        $binary = $this->binary($visitor);
-        $windows = $this->windowsFor('visitor', $binary);
+        $bound = Binary::bind($this->connection(), $this->binary($visitor));
+        $windows = $this->windowsFor('visitor', $bound);
 
         $removed = [
-            'entries' => $this->connection()->table(Tables::entries())->where('visitor', $binary)->delete(),
-            'sessions' => $this->connection()->table(Tables::sessions())->where('visitor', $binary)->delete(),
-            'visitor_days' => $this->connection()->table(Tables::visitorDays())->where('visitor', $binary)->delete(),
-            'presence' => $this->connection()->table(Tables::presence())->where('visitor', $binary)->delete(),
+            'entries' => $this->connection()->table(Tables::entries())->where('visitor', $bound)->delete(),
+            'sessions' => $this->connection()->table(Tables::sessions())->where('visitor', $bound)->delete(),
+            'visitor_days' => $this->connection()->table(Tables::visitorDays())->where('visitor', $bound)->delete(),
+            'presence' => $this->connection()->table(Tables::presence())->where('visitor', $bound)->delete(),
         ];
 
         $removed['aggregates_rebuilt'] = $this->rebuild($windows);
@@ -87,15 +88,16 @@ final readonly class Eraser
     public function exportVisitor(string $visitor): array
     {
         $binary = $this->binary($visitor);
+        $bound = Binary::bind($this->connection(), $binary);
 
         return [
             'subject' => ['type' => 'visitor', 'hash' => bin2hex($binary)],
             'note' => 'A visitor hash is derived from a salt that rotates every 24 hours '
                 .'and is never stored. Cairn cannot determine whether activity under a '
                 .'different hash belongs to the same person, and neither can anyone else.',
-            'entries' => $this->rowsFor(Tables::entries(), 'visitor', $binary),
-            'sessions' => $this->rowsFor(Tables::sessions(), 'visitor', $binary),
-            'presence' => $this->rowsFor(Tables::presence(), 'visitor', $binary),
+            'entries' => $this->rowsFor(Tables::entries(), 'visitor', $bound),
+            'sessions' => $this->rowsFor(Tables::sessions(), 'visitor', $bound),
+            'presence' => $this->rowsFor(Tables::presence(), 'visitor', $bound),
         ];
     }
 
@@ -177,9 +179,12 @@ final readonly class Eraser
                 $data = (array) $row;
 
                 // Binary columns are hex-encoded so the export is valid JSON.
+                // PostgreSQL hands them back as a stream, which json_encode
+                // cannot represent at all — hence Binary::read rather than a
+                // string check.
                 foreach (['visitor', 'session', 'id'] as $binary) {
-                    if (isset($data[$binary]) && is_string($data[$binary])) {
-                        $data[$binary] = bin2hex($data[$binary]);
+                    if (isset($data[$binary])) {
+                        $data[$binary] = bin2hex(Binary::read($data[$binary]));
                     }
                 }
 

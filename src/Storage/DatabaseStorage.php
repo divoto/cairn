@@ -14,6 +14,7 @@ use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Buckets;
 use Divoto\Cairn\Support\EntryMapper;
 use Divoto\Cairn\Support\Tables;
@@ -61,7 +62,15 @@ final readonly class DatabaseStorage implements Storage
             return;
         }
 
-        $rows = $entries->map(static fn (Entry $entry): array => EntryMapper::toRow($entry));
+        $connection = $this->connection();
+
+        // EntryMapper is driver-agnostic by design — the Redis path uses it
+        // too — so the binary columns are prepared here rather than there.
+        $rows = $entries->map(static fn (Entry $entry): array => Binary::bindRow(
+            $connection,
+            EntryMapper::toRow($entry),
+            ['visitor', 'session'],
+        ));
 
         foreach ($rows->chunk(self::INSERT_CHUNK) as $chunk) {
             $this->connection()->table(Tables::entries())->insert($chunk->values()->all());
@@ -236,7 +245,10 @@ final readonly class DatabaseStorage implements Storage
             ->where('started_at', '<', $to->toDateTimeString())
             ->selectRaw(implode(', ', [
                 'count(*) as m_sessions',
-                'sum(case when is_bounce = 1 then 1 else 0 end) as m_bounces',
+                // Tested for truthiness rather than compared against 1:
+                // `is_bounce` is a real boolean on PostgreSQL, where
+                // `is_bounce = 1` is not a comparison but a type error.
+                'sum(case when is_bounce then 1 else 0 end) as m_bounces',
                 'sum(coalesce(duration_seconds, 0)) as m_session_seconds',
             ]))
             ->first();
@@ -449,7 +461,7 @@ final readonly class DatabaseStorage implements Storage
             'type' => $metric,
             'aggregate' => substr($aggregate, 0, 16),
             'key' => $encoded,
-            'key_hash' => substr(hash('sha256', $encoded, true), 0, 16),
+            'key_hash' => Binary::bind($this->connection(), substr(hash('sha256', $encoded, true), 0, 16)),
             'value' => $value,
             'tenant_id' => $tenant,
         ];
