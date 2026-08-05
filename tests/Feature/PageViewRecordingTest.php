@@ -78,6 +78,39 @@ it('collapses identifiers when a route has no name', function (): void {
     expect(entries()->value('route'))->toBe('/plain/{id}');
 });
 
+/**
+ * The escape hatch for applications where one named route serves the whole
+ * catalogue: grouping by name would put every page on a single row, so the
+ * path becomes the grouping instead — with identifiers still collapsed, since
+ * fragmenting on order ids was never the thing anybody wanted.
+ */
+it('groups by path when configured to', function (): void {
+    config()->set('cairn.recorders.'.PageViews::class.'.group_by', 'path');
+
+    browse('/pricing');
+    browse('/orders/8814/invoice');
+    browse('/orders/9921/invoice');
+
+    expect(entries()->distinct()->orderBy('route')->pluck('route')->all())
+        ->toBe(['/orders/{id}/invoice', '/pricing']);
+});
+
+it('groups by route pattern when configured to', function (): void {
+    config()->set('cairn.recorders.'.PageViews::class.'.group_by', 'uri');
+
+    browse('/orders/8814/invoice');
+
+    expect(entries()->value('route'))->toBe('/orders/{order}/invoice');
+});
+
+it('keeps grouping by route name when the setting is nonsense', function (): void {
+    config()->set('cairn.recorders.'.PageViews::class.'.group_by', 'sideways');
+
+    browse('/pricing');
+
+    expect(entries()->value('route'))->toBe('pricing.index');
+});
+
 it('records the response status and a server duration', function (): void {
     browse('/pricing');
 

@@ -28,6 +28,7 @@ use Divoto\Cairn\Counting\NullUniqueCounter;
 use Divoto\Cairn\Counting\RedisUniqueCounter;
 use Divoto\Cairn\Detection\UserAgentBotDetector;
 use Divoto\Cairn\Detection\UserAgentDeviceDetector;
+use Divoto\Cairn\Enums\RouteGrouping;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Http\Middleware\Authorize;
 use Divoto\Cairn\Http\Middleware\EnsureApiEnabled;
@@ -247,7 +248,13 @@ final class CairnServiceProvider extends ServiceProvider
         $this->app->singleton(OptOut::class);
         $this->app->singleton(PrivacyGate::class);
         $this->app->singleton(ChannelClassifier::class);
-        $this->app->singleton(RouteNameGrouper::class);
+
+        $this->app->singleton(RouteNameGrouper::class, fn (): RouteNameGrouper => new RouteNameGrouper(
+            RouteGrouping::fromConfig(
+                $this->app->make(Repository::class)->get('cairn.recorders.'.PageViews::class.'.group_by'),
+            ),
+        ));
+
         $this->app->singleton(EntryFactory::class);
         $this->app->singleton(CairnManager::class);
 

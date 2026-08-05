@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
+use Divoto\Cairn\Enums\RouteGrouping;
 use Divoto\Cairn\Support\ChannelClassifier;
 use Divoto\Cairn\Support\Engine;
 use Divoto\Cairn\Support\EntryMapper;
@@ -14,6 +15,7 @@ use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\WidgetLayout;
 use Divoto\Cairn\Widgets\WidgetSchema;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -131,6 +133,48 @@ it('sorts campaign parameters so the same visit is one URL', function (): void {
 it('falls back to a collapsed path when there is no route', function (): void {
     expect((new RouteNameGrouper)->group(Request::create('/orders/1/invoice')))
         ->toBe('/orders/{id}/invoice');
+});
+
+/**
+ * The reason the grouping is configurable at all: a site that serves its whole
+ * catalogue from one named route has the same route name for every page, and
+ * the default grouping puts all of it on a single row.
+ */
+it('groups by the configured strategy', function (RouteGrouping $grouping, string $expected): void {
+    $route = (new Route('GET', '{page}', []))->name('pages.show');
+    $request = Request::create('/blog/hello-world');
+    $request->setRouteResolver(fn (): Route => $route);
+
+    expect((new RouteNameGrouper($grouping))->group($request))->toBe($expected);
+})->with([
+    'name' => [RouteGrouping::Name, 'pages.show'],
+    'uri' => [RouteGrouping::Uri, '/{page}'],
+    'path' => [RouteGrouping::Path, '/blog/hello-world'],
+]);
+
+it('still collapses identifiers when grouping by path', function (): void {
+    $route = (new Route('GET', 'orders/{order}/invoice', []))->name('orders.invoice');
+    $request = Request::create('/orders/8814/invoice');
+    $request->setRouteResolver(fn (): Route => $route);
+
+    expect((new RouteNameGrouper(RouteGrouping::Path))->group($request))
+        ->toBe('/orders/{id}/invoice');
+});
+
+it('falls back past an unnamed route when grouping by name', function (): void {
+    $route = new Route('GET', 'orders/{order}', []);
+    $request = Request::create('/orders/8814');
+    $request->setRouteResolver(fn (): Route => $route);
+
+    expect((new RouteNameGrouper)->group($request))->toBe('/orders/{order}');
+});
+
+it('reads the grouping from config, defaulting to route names', function (): void {
+    expect(RouteGrouping::fromConfig('path'))->toBe(RouteGrouping::Path)
+        ->and(RouteGrouping::fromConfig('name'))->toBe(RouteGrouping::Name)
+        ->and(RouteGrouping::fromConfig(null))->toBe(RouteGrouping::Name)
+        ->and(RouteGrouping::fromConfig('nonsense'))->toBe(RouteGrouping::Name)
+        ->and(RouteGrouping::fromConfig(['path']))->toBe(RouteGrouping::Name);
 });
 
 /*

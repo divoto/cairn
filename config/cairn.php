@@ -312,6 +312,23 @@ return [
             'enabled' => true,
             'sample_rate' => 1.0,
 
+            // What a request is called in the routes table.
+            //
+            //   'name' — the route name, falling back to its URI pattern.
+            //            /orders/8814/invoice becomes "orders.invoice".
+            //   'uri'  — the route's URI pattern, ignoring its name.
+            //            /orders/8814/invoice becomes /orders/{order}/invoice.
+            //   'path' — the requested path, with numeric ids, UUIDs and ULIDs
+            //            collapsed to {id}. /blog/hello stays /blog/hello.
+            //
+            // Choose 'path' if most of your pages are served by one
+            // parameterised route — a CMS on /{page}, docs on /docs/{slug} —
+            // where the route name is identical for every page and grouping by
+            // it puts the whole site on one row. The cost is that the number of
+            // distinct rows is then bounded by what visitors request rather
+            // than by your route table, so rollups grow with your content.
+            'group_by' => 'name',
+
             // Paths, route names or closures to never record. Wildcards are
             // matched with Str::is(), so "admin/*" works.
             'ignore' => [

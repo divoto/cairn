@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Maintenance;
 
 use Divoto\Cairn\Enums\GeoPrecision;
+use Divoto\Cairn\Enums\RouteGrouping;
 use Divoto\Cairn\Geo\MaxMindGeoResolver;
+use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -44,6 +46,7 @@ final readonly class Doctor
             $this->userTracking(),
             $this->geoPrecision(),
             $this->geoDatabase(),
+            $this->routeGrouping(),
             $this->retention(),
             $this->openGate(),
             $this->saltStore(),
@@ -150,6 +153,36 @@ final readonly class Doctor
             ),
             'cairn.privacy.geo_database',
             severe: true,
+        );
+    }
+
+    /**
+     * Route grouping with no ceiling on how many rows it can produce.
+     *
+     * This is a legitimate choice — a content site needs it to see anything at
+     * all — but it changes the growth characteristics of the rollup table from
+     * "bounded by the route table" to "bounded by what visitors ask for",
+     * including URLs that never matched a route. Worth knowing before it shows
+     * up as disk.
+     */
+    private function routeGrouping(): ?Finding
+    {
+        $grouping = RouteGrouping::fromConfig(
+            $this->config->get('cairn.recorders.'.PageViews::class.'.group_by'),
+        );
+
+        if (! $grouping->isUnbounded()) {
+            return null;
+        }
+
+        return new Finding(
+            'Pageviews are grouped by URL path',
+            'Every distinct path is its own row in the routes rollup, rather than every '
+            .'route. Identifier segments still collapse to {id}, but slugs do not — so '
+            .'the table grows with your content, and with any path a visitor invents. '
+            .'That is the right setting for a site whose pages share one route; it is '
+            .'worth checking retention.aggregates if the site is large.',
+            'cairn.recorders.'.PageViews::class.'.group_by',
         );
     }
 
