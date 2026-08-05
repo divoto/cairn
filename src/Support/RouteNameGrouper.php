@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Support;
 
+use Divoto\Cairn\Enums\RouteGrouping;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 
@@ -18,8 +19,14 @@ use Illuminate\Routing\Route;
  * Failing a route name, the URI is collapsed by replacing anything that looks
  * like an identifier with `{id}` — which is a guess, but a far better one than
  * treating every order as a separate page.
+ *
+ * Which of those answers is wanted is a property of the application, not of
+ * Cairn: a site that serves every page from one `/{slug}` route has a single
+ * route name for its entire catalogue, and grouping by it says nothing. So the
+ * preference order is configurable — see {@see RouteGrouping} and
+ * `cairn.recorders.PageViews::class.group_by`.
  */
-final class RouteNameGrouper
+final readonly class RouteNameGrouper
 {
     /**
      * Matches a segment that is an identifier rather than a name: all digits,
@@ -28,31 +35,61 @@ final class RouteNameGrouper
     private const IDENTIFIER = '/^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/i';
 
     /**
+     * Defaults to the route name, which is what an unconfigured install gets
+     * and what every version before this one did.
+     */
+    public function __construct(
+        private RouteGrouping $grouping = RouteGrouping::Name,
+    ) {}
+
+    /**
      * The grouping name for a request.
      *
-     * Prefers the route name, then the route's URI pattern — which already
-     * contains `{order}` style placeholders — and only then falls back to
-     * guessing from the path.
+     * Under the default grouping this prefers the route name, then the route's
+     * URI pattern — which already contains `{order}` style placeholders — and
+     * only then falls back to guessing from the path. The other groupings skip
+     * straight to a later step; all three end at the same fallback, because a
+     * request that matched no route still has to be called something.
      */
     public function group(Request $request): string
     {
         $route = $request->route();
 
-        if ($route instanceof Route) {
-            $name = $route->getName();
+        return match ($this->grouping) {
+            RouteGrouping::Path => $this->collapse($request->path()),
+            RouteGrouping::Uri => $this->pattern($route) ?? $this->collapse($request->path()),
+            RouteGrouping::Name => $this->name($route)
+                ?? $this->pattern($route)
+                ?? $this->collapse($request->path()),
+        };
+    }
 
-            if (is_string($name) && $name !== '') {
-                return $name;
-            }
-
-            $uri = $route->uri();
-
-            if ($uri !== '') {
-                return '/'.ltrim($uri, '/');
-            }
+    /**
+     * The route's name, if it has a non-empty one.
+     */
+    private function name(mixed $route): ?string
+    {
+        if (! $route instanceof Route) {
+            return null;
         }
 
-        return $this->collapse($request->path());
+        $name = $route->getName();
+
+        return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /**
+     * The route's URI pattern, as a path.
+     */
+    private function pattern(mixed $route): ?string
+    {
+        if (! $route instanceof Route) {
+            return null;
+        }
+
+        $uri = $route->uri();
+
+        return $uri === '' ? null : '/'.ltrim($uri, '/');
     }
 
     /**

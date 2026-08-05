@@ -9,6 +9,27 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
+## [0.2.0] - 2026-08-05
+
+### Added
+
+- **`recorders.PageViews::class.group_by` chooses how a request becomes a row in
+  the routes table.** Grouping by route name is what an external analytics tag
+  cannot do, and it stays the default — but it assumes routes are mostly
+  distinct pages. An application that serves its whole catalogue from one
+  parameterised route (`/{page}`, `/docs/{slug}`) has a single route name for
+  every page, so the entire site collapsed into one row and there was no way to
+  change it: `RouteNameGrouper` is `final`, so it could not be swapped either.
+
+  `'name'` (default) is the previous behaviour, `'uri'` groups by the route's URI
+  pattern, and `'path'` groups by the requested path with numeric ids, UUIDs and
+  ULIDs still collapsed to `{id}`. An unrecognised value falls back to `'name'`
+  rather than throwing, because a config typo must not stop pageviews being
+  recorded. The Top routes caption reads the setting rather than asserting a
+  grouping the deployment may not be using, and `cairn:doctor` reports `'path'`,
+  whose row count is bounded by what visitors request rather than by the route
+  table.
+
 ## [0.1.2] - 2026-08-04
 
 Fixes deployment on any application that installed Cairn without Pulse.
@@ -156,7 +177,7 @@ First public release.
 - Continuous integration across PHP 8.2–8.4 and Laravel 12–13, plus a database
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
-[Unreleased]: https://github.com/divoto/cairn/commits/main
+[0.2.0]: https://github.com/divoto/cairn/releases/tag/v0.2.0
 
 [0.1.2]: https://github.com/divoto/cairn/releases/tag/v0.1.2
 

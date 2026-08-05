@@ -76,6 +76,42 @@ and you can take the work off your requests entirely:
 Without a scheduler, leave the lottery alone: a small fraction of requests will
 carry the rollup and prune work after their response has been sent.
 
+## Optional: how pages are grouped
+
+By default the routes table is grouped by **route name**, which is why
+`/orders/8814/invoice` and `/orders/9921/invoice` count as one page rather than
+two. That is the right answer for an application whose routes are mostly
+distinct pages.
+
+It is the wrong answer if most of your pages come from one parameterised route —
+a CMS on `/{page}`, docs on `/docs/{slug}`. There the route name is the same
+string for every page, and the whole site arrives on a single row. Group by path
+instead:
+
+```php
+// config/cairn.php
+'recorders' => [
+    PageViews::class => [
+        'group_by' => 'path',
+    ],
+],
+```
+
+| Setting  | `/blog/hello-world` | `/orders/8814/invoice`   |
+| -------- | ------------------- | ------------------------ |
+| `'name'` | `pages.show`        | `orders.invoice`         |
+| `'uri'`  | `/{page}`           | `/orders/{order}/invoice` |
+| `'path'` | `/blog/hello-world` | `/orders/{id}/invoice`   |
+
+Under `'path'`, numeric ids, UUIDs and ULIDs still collapse to `{id}` — a slug is
+a name, an order id is not. The cost is that the number of distinct rows is
+bounded by what visitors request rather than by your route table, so rollups grow
+with your content. `cairn:doctor` mentions it.
+
+The setting applies from the moment you change it. Entries already recorded keep
+the grouping they were recorded with, so a switch shows up as old rows staying
+put and new ones appearing beside them.
+
 ## Optional: Redis
 
 ```env

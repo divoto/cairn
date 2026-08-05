@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Widgets\Shipped;
 
 use Divoto\Cairn\Enums\Dimension;
+use Divoto\Cairn\Enums\RouteGrouping;
+use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Widgets\DimensionWidget;
 
 final class TopRoutes extends DimensionWidget
@@ -19,9 +21,16 @@ final class TopRoutes extends DimensionWidget
         return 'Top routes';
     }
 
+    /**
+     * What the rows mean depends on how pageviews were grouped when they were
+     * recorded, so the caption is read from the same setting rather than
+     * asserting a grouping the deployment may not be using.
+     */
     public function description(): string
     {
-        return 'Grouped by route name, so /orders/8814/invoice and /orders/9921/invoice count as one page rather than two.';
+        return RouteGrouping::fromConfig(
+            config('cairn.recorders.'.PageViews::class.'.group_by'),
+        )->description();
     }
 
     protected function dimension(): Dimension
