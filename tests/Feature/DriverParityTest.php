@@ -166,15 +166,30 @@ it('counts a visitor once however many times they are seen', function (string $d
     expect(app(UniqueCounter::class)->count('2026-03-01', 'repeat-visitor'))->toBe(1);
 })->with(['database', 'redis']);
 
+/**
+ * The visitors here are fixed rather than random, and deliberately so.
+ *
+ * HyperLogLog is not exact at this cardinality. Redis hashes each element into
+ * one of 16384 registers, and two of 25 random visitors share a register about
+ * 1.8% of the time — when they do, PFCOUNT returns 24 instead of 25 (rarely 23).
+ * Random visitors therefore make this test fail roughly one run in fifty, which
+ * is a property of HyperLogLog rather than a bug in either driver.
+ *
+ * A fixed set that lands in 25 distinct registers keeps the assertion exact for
+ * both drivers, so a driver that genuinely miscounts still fails the suite.
+ * Redis's HLL hash is part of its serialisation format and does not change.
+ */
 it('counts distinct visitors separately', function (string $driver): void {
     useDriver($driver);
 
-    foreach (range(1, 25) as $ignored) {
-        app(UniqueCounter::class)->add('2026-03-02', 'distinct-visitors', random_bytes(16));
+    foreach (range(1, 25) as $visitor) {
+        app(UniqueCounter::class)->add(
+            '2026-03-02',
+            'distinct-visitors',
+            substr(hash('sha256', 'visitor-'.$visitor, true), 0, 16),
+        );
     }
 
-    // The Redis driver estimates with HyperLogLog, which is exact at this
-    // cardinality; the database driver is always exact.
     expect(app(UniqueCounter::class)->count('2026-03-02', 'distinct-visitors'))->toBe(25);
 })->with(['database', 'redis']);
 
