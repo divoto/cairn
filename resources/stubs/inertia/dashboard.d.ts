@@ -4,8 +4,8 @@
  * These match what Divoto\Cairn\Integrations\Inertia\DashboardController
  * renders. A test asserts the two stay in step.
  *
- * The Vue and React components published alongside this file are starting
- * points you own. Cairn does not maintain their appearance.
+ * No page component is published alongside this file. The one you write against
+ * these types is yours: you own it, and Cairn does not maintain its appearance.
  */
 
 export type MetricUnit =

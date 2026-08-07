@@ -15,12 +15,12 @@ use Inertia\Response;
 /**
  * The Inertia dashboard: typed page props, and nothing else.
  *
- * **Cairn ships controllers and props, not styled components.** The Vue and
- * React files under the `cairn-inertia` tag are publishable *starting points
- * that you own* — Cairn does not maintain them, will not restyle them to match
- * your application, and will not treat their appearance as a bug. Shipping
- * framework components that had to look right inside somebody else's design
- * system is a promise no package can keep.
+ * **Cairn ships controllers and props, not styled components.** The
+ * `cairn-inertia` tag publishes a TypeScript definition of the props below and
+ * nothing else — the page component is *yours to own*. Cairn does not maintain
+ * it, will not restyle it to match your application, and will not treat its
+ * appearance as a bug. Shipping framework components that had to look right
+ * inside somebody else's design system is a promise no package can keep.
  *
  * If you want a dashboard that works out of the box, use the Blade driver.
  */

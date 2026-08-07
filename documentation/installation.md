@@ -137,6 +137,54 @@ php artisan cairn:partition --months=13
 deleting rows. On PostgreSQL and SQLite the command explains that it cannot
 help and exits successfully.
 
+## Optional: Livewire or Inertia
+
+The Blade dashboard needs no build step and is the one every number is checked
+against. If you would rather the dashboard matched the stack you already run:
+
+```env
+CAIRN_DASHBOARD=livewire   # needs livewire/livewire
+CAIRN_DASHBOARD=inertia    # needs inertiajs/inertia-laravel
+```
+
+Cairn requires neither package — both are `suggest` entries — so naming one that
+is not installed serves the Blade dashboard rather than failing. `none` registers
+no dashboard route at all, leaving recording, the commands and the JSON API
+running.
+
+The Livewire driver renders the same Blade partials and asks the same widgets as
+the server-rendered dashboard, so the two cannot drift into reporting different
+numbers. Selecting it also registers the component as `cairn-dashboard`, which is
+what lets you skip Cairn's own route and embed the dashboard in a page of your
+own:
+
+```blade
+<livewire:cairn-dashboard />
+```
+
+Embedded, the component brings its own copy of the stylesheet, because your
+layout supplies the document and Cairn's does not. Served at Cairn's path it
+does not, because the packaged layout has already inlined it.
+
+What the Livewire driver adds is filtering without a page load. It does not
+poll: every dashboard is a snapshot, as fresh as the request that drew it and no
+fresher, and that is deliberately the same answer under all three drivers — how
+old a number is should not depend on which wrapper you chose. Live-updating the
+two widgets where staleness actually misleads, live visitors and the activity
+feed, is planned for a later release.
+
+The Inertia driver renders a `Cairn/Dashboard` page. Cairn ships the controller
+and its typed props; the page component is yours to write:
+
+```bash
+php artisan vendor:publish --tag=cairn-inertia   # resources/js/cairn
+```
+
+That publishes a TypeScript definition of every prop the controller renders — a
+test keeps the two in step — and nothing else. Cairn does not ship styled
+components, because a dashboard that had to look right inside somebody else's
+design system is a promise no package can keep.
+
 ## Publishing
 
 ```bash

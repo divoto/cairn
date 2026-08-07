@@ -10,9 +10,11 @@ use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Http\Controllers\DashboardController as BladeDashboard;
 use Divoto\Cairn\Integrations\Inertia\DashboardController as InertiaDashboard;
 use Divoto\Cairn\Integrations\Integrations;
 use Divoto\Cairn\Integrations\Livewire\Dashboard as LivewireDashboard;
+use Divoto\Cairn\Integrations\Livewire\DashboardController as LivewireDashboardController;
 use Divoto\Cairn\Integrations\Pulse\LiveVisitors as PulseLiveVisitors;
 use Divoto\Cairn\Integrations\Pulse\TopRoutes as PulseTopRoutes;
 use Divoto\Cairn\Widgets\Filters;
@@ -20,11 +22,20 @@ use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route as RouteFacade;
 use Livewire\Livewire;
 use Livewire\Mechanisms\ComponentRegistry;
 
 uses(RefreshDatabase::class);
+
+// The dashboard-driver tests set this to boot an application with a driver
+// selected. Cleared after every test so a reboot cannot leak a driver into the
+// application the next one builds.
+afterEach(function (): void {
+    Env::getRepository()->clear('CAIRN_DASHBOARD');
+});
 
 beforeEach(function (): void {
     Gate::define('viewCairn', fn (mixed $user = null): bool => true);
@@ -43,6 +54,49 @@ function componentRegistered(string $name): bool
     } catch (Throwable) {
         return false;
     }
+}
+
+/**
+ * Boot a fresh application with a dashboard driver already selected.
+ *
+ * The provider reads `cairn.dashboard.driver` when it registers the dashboard
+ * route, which has happened long before a test body runs — config()->set() here
+ * would change the value the route was already built from and prove nothing.
+ * Setting the environment variable the shipped config reads and rebuilding the
+ * application is what makes the selection real.
+ *
+ * The migrations run again because the default connection is an in-memory
+ * SQLite database, which the discarded application took with it.
+ */
+function bootWithDashboardDriver(string $driver): void
+{
+    Env::getRepository()->set('CAIRN_DASHBOARD', $driver);
+
+    // reloadApplication() is protected, and deliberately so — rebuilding the
+    // application mid-test is not something a test should reach for casually.
+    // Bound rather than exposed, so the one place that needs it is the only
+    // place that has it.
+    (function (): void {
+        $this->reloadApplication();
+    })->call(cairnTest());
+
+    cairnTest()->artisan('migrate');
+
+    Gate::define('viewCairn', fn (mixed $user = null): bool => true);
+}
+
+/**
+ * The class the registered dashboard route actually dispatches to.
+ */
+function dashboardRouteAction(): string
+{
+    foreach (RouteFacade::getRoutes()->getRoutes() as $route) {
+        if ($route->getName() === 'cairn.dashboard') {
+            return $route->getActionName();
+        }
+    }
+
+    return 'no route';
 }
 
 /**
@@ -139,6 +193,95 @@ it('registers nothing when Cairn is disabled', function (): void {
     config()->set('cairn.enabled', false);
 
     expect(fn () => app(Integrations::class)->register())->not->toThrow(Throwable::class);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard driver
+|--------------------------------------------------------------------------
+|
+| These assert the ROUTE, not the adapter. The adapters were covered from the
+| day they were written — a Livewire::test() on the component, a direct props()
+| call on the Inertia controller — and both passed while `CAIRN_DASHBOARD` was
+| wired to nothing at all: every driver served the Blade dashboard and returned
+| 200, so selecting one looked exactly like success. Testing the pieces without
+| testing the selection is what let that ship.
+|
+| The driver is read when the provider registers routes, which is before a test
+| body runs, so these boot a fresh application rather than calling config()->set.
+|
+*/
+
+it('points the dashboard route at the driver that is selected', function (string $driver, string $expected): void {
+    bootWithDashboardDriver($driver);
+
+    expect(dashboardRouteAction())->toBe($expected);
+})->with([
+    'blade' => ['blade', BladeDashboard::class],
+    'livewire' => ['livewire', LivewireDashboardController::class],
+    'inertia' => ['inertia', InertiaDashboard::class],
+    // A driver nobody implemented is a typo, and a typo should leave the
+    // canonical dashboard standing rather than take the page down.
+    'unknown' => ['nonsense', BladeDashboard::class],
+]);
+
+it('serves the Livewire dashboard as a page when that driver is selected', function (): void {
+    bootWithDashboardDriver('livewire');
+
+    $response = cairnTest()->get('/cairn');
+
+    $response->assertOk()
+        // The page shell the component deliberately does not carry...
+        ->assertSee('<!DOCTYPE html>', false)
+        // ...wrapped around the component itself, which only Livewire emits.
+        ->assertSee('wire:id', false)
+        ->assertSee('cairn-livewire', false);
+});
+
+/**
+ * The packaged layout inlines the stylesheet and so does the component, for the
+ * separate case of being embedded in a host application's own layout. Serving
+ * the page must not therefore ship 8KB of it twice.
+ */
+it('inlines the dashboard stylesheet exactly once on the Livewire page', function (): void {
+    bootWithDashboardDriver('livewire');
+
+    $html = cairnTest()->get('/cairn')->getContent();
+    $html = is_string($html) ? $html : '';
+
+    // Asserted alongside the component's own marker, so this cannot pass by
+    // quietly serving the Blade dashboard — which also inlines exactly one.
+    expect($html)->toContain('cairn-livewire')
+        ->and(substr_count($html, '<style>'))->toBe(1);
+});
+
+it('serves the Inertia dashboard when that driver is selected', function (): void {
+    bootWithDashboardDriver('inertia');
+
+    // Asked for as an Inertia visit, which answers with the page object rather
+    // than the host application's root template — Cairn does not ship one.
+    $response = cairnTest()->withHeaders(['X-Inertia' => 'true'])->get('/cairn');
+
+    $response->assertOk()
+        ->assertJsonPath('component', 'Cairn/Dashboard');
+
+    expect($response->json('props'))->toHaveKeys(['filters', 'ranges', 'widgets']);
+});
+
+/**
+ * `none` is documented as registering no dashboard route while leaving the rest
+ * of Cairn running. Switching the dashboard off is not switching Cairn off —
+ * an application that reads its numbers through the JSON API or the report
+ * builder has no use for the page and should still be recording.
+ */
+it('registers no dashboard route when the driver is none', function (): void {
+    bootWithDashboardDriver('none');
+
+    expect(RouteFacade::has('cairn.dashboard'))->toBeFalse()
+        // The beacon endpoint is registered on its own terms and must survive.
+        ->and(RouteFacade::has('cairn.collect'))->toBeTrue();
+
+    cairnTest()->get('/cairn')->assertNotFound();
 });
 
 /*

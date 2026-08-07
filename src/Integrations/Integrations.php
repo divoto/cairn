@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Integrations;
 
+use Divoto\Cairn\Http\Controllers\DashboardController as BladeDashboardController;
+use Divoto\Cairn\Integrations\Inertia\DashboardController as InertiaDashboardController;
 use Divoto\Cairn\Integrations\Livewire\Dashboard as LivewireDashboard;
+use Divoto\Cairn\Integrations\Livewire\DashboardController as LivewireDashboardController;
 use Divoto\Cairn\Integrations\Pulse\LiveVisitors as PulseLiveVisitors;
 use Divoto\Cairn\Integrations\Pulse\TopRoutes as PulseTopRoutes;
 use Illuminate\Contracts\Config\Repository as Config;
@@ -62,6 +65,35 @@ final readonly class Integrations
         } catch (Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * The controller the dashboard route points at.
+     *
+     * `cairn.dashboard.driver` selects the dashboard, so it has to reach the
+     * routing — the route file asks here rather than naming a controller,
+     * which is what keeps every mention of an optional package inside this
+     * namespace. The route named the Blade controller outright until this
+     * existed, and the setting reached nothing: `livewire` and `inertia` both
+     * served the Blade dashboard and returned 200, so a driver that was doing
+     * nothing at all looked exactly like one that worked.
+     *
+     * An uninstalled package falls back to Blade rather than failing. The
+     * driver names an optional dependency, and a dashboard that 500s because
+     * a `suggest` entry is missing would be a worse answer than the canonical
+     * dashboard.
+     *
+     * @return class-string
+     */
+    public function dashboardController(): string
+    {
+        $driver = $this->config->get('cairn.dashboard.driver');
+
+        return match (true) {
+            $driver === 'livewire' && $this->hasLivewire() => LivewireDashboardController::class,
+            $driver === 'inertia' && $this->hasInertia() => InertiaDashboardController::class,
+            default => BladeDashboardController::class,
+        };
     }
 
     /**

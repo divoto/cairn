@@ -23,17 +23,34 @@ use Livewire\Component;
  * that drifted from the Blade one would mean two sets of numbers to keep
  * honest, and only one of them would ever get checked.
  *
- * What it adds is polling on the two widgets where a stale figure is actually
- * misleading: live visitors and the activity feed. Everything else on the page
- * is a rollup that changes at most once an hour, and re-fetching it every few
- * seconds would spend a database query to redraw an identical number.
+ * What it adds is filtering without a page load. Filter state is bound to the
+ * query string with #[Url], so a Livewire view of the dashboard is still a
+ * shareable link — the same property the Blade version has.
  *
- * Filter state is bound to the query string with #[Url], so a Livewire view of
- * the dashboard is still a shareable link — the same property the Blade
- * version has.
+ * **It does not poll.** Every driver renders a snapshot: the figures are as
+ * fresh as the request that drew them and no fresher, and that is deliberately
+ * the same answer under Blade, Livewire and Inertia. A Livewire dashboard that
+ * quietly refreshed itself while the other two did not would make "how old is
+ * this number?" depend on which wrapper you had chosen.
+ *
+ * Live-updating the two widgets where a stale figure actually misleads — live
+ * visitors and the activity feed — is worth doing and is left to a later
+ * release. It is not the one-line change it looks like: wire:poll refreshes
+ * the whole component, so polling those two without re-running every other
+ * widget's query means giving each of them a component of its own.
  */
 final class Dashboard extends Component
 {
+    /**
+     * Whether something else on the page already supplies the stylesheet.
+     *
+     * True when dropped into a host application's own layout, which is the
+     * default and the case where the component has to bring its own styles.
+     * Cairn's own page sets it false — the packaged layout inlines the same
+     * stylesheet, and a second copy would be 8KB of duplicate CSS.
+     */
+    public bool $embedded = true;
+
     #[Url(as: 'range', keep: true)]
     public string $range = '30d';
 
@@ -96,9 +113,6 @@ final class Dashboard extends Component
             'overview' => $overview,
             'series' => $overview?->series($filters),
             'path' => $this->path(),
-            // Tells the shared partials to add wire:poll to the two widgets
-            // where a stale number would mislead.
-            'live' => true,
         ]);
     }
 

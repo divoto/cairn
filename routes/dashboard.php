@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Divoto\Cairn\Http\Controllers\DashboardController;
+use Divoto\Cairn\Integrations\Integrations;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -14,6 +14,10 @@ use Illuminate\Support\Facades\Route;
 | gate. Every filter is a query parameter rather than a path segment, so the
 | whole dashboard is one route and every view of it is a shareable URL.
 |
+| The controller is whichever one `cairn.dashboard.driver` selects. Integrations
+| answers that, because it is the only place allowed to know which optional
+| packages are installed.
+|
 */
 
-Route::get('/', DashboardController::class)->name('dashboard');
+Route::get('/', app(Integrations::class)->dashboardController())->name('dashboard');

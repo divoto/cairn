@@ -11,9 +11,15 @@
     inlined for the same reason the packaged layout inlines it — it is smaller
     than the request that would fetch it, and it cannot break when a
     deployment forgets to republish assets.
+
+    When Cairn serves this at its own path the packaged layout wraps it and has
+    already inlined that stylesheet, so `cairn::livewire.page` passes
+    `embedded: false` and the copy below is skipped.
 --}}
 <div class="cairn cairn-livewire">
-    <style>{!! Divoto\Cairn\Support\Assets::css() !!}</style>
+    @if ($embedded)
+        <style>{!! Divoto\Cairn\Support\Assets::css() !!}</style>
+    @endif
 
     @include('cairn::partials.dashboard')
 </div>

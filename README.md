@@ -258,6 +258,44 @@ everybody outside the local environment** until you define it:
 Gate::define('viewCairn', fn ($user) => $user?->isAdmin() ?? false);
 ```
 
+## Dashboard drivers
+
+The Blade dashboard is canonical: server-rendered, no build step, and the one
+every number is checked against. Two wrappers exist if you would rather the
+dashboard matched the stack you already run.
+
+```env
+CAIRN_DASHBOARD=blade      # default — needs no optional package
+CAIRN_DASHBOARD=livewire   # needs livewire/livewire
+CAIRN_DASHBOARD=inertia    # needs inertiajs/inertia-laravel
+CAIRN_DASHBOARD=none       # register no dashboard route at all
+```
+
+Cairn requires neither package — both are `suggest` entries — so naming one that
+is not installed serves the Blade dashboard rather than failing.
+
+**Livewire** renders the same partials and asks the same widgets as the Blade
+dashboard, so the two cannot report different numbers. What it adds is filtering
+without a page load. Selecting the driver also registers the component as
+`cairn-dashboard`, which is what lets you ignore Cairn's own route and put the
+dashboard inside your application's layout:
+
+```blade
+<livewire:cairn-dashboard />
+```
+
+**No driver polls.** Every dashboard is a snapshot, as fresh as the request that
+drew it and no fresher, and deliberately the same answer under all three — how
+old a number is should not depend on which wrapper you chose. Live-updating the
+widgets where staleness actually misleads is planned for a later release.
+
+**Inertia** renders a `Cairn/Dashboard` page. Cairn ships the controller, its
+typed props, and a TypeScript definition of them under `--tag=cairn-inertia` —
+not a styled page component, which is yours to write against those types. A
+dashboard that had to look right inside somebody else's design system is a
+promise no package can keep. If you want one that works out of the box, use
+Blade.
+
 ## Further reading
 
 - [Installation](documentation/installation.md) · [The privacy model](documentation/privacy-model.md) · [The report builder](documentation/report-builder.md) · [Geolocation](documentation/geolocation.md)

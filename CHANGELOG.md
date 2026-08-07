@@ -13,6 +13,24 @@ until the package has run in production for a meaningful period.
 
 ### Fixed
 
+- **Selecting the Livewire or Inertia dashboard did nothing.**
+  `routes/dashboard.php` named the Blade controller outright, and the provider
+  only ever branched on `none`, so `CAIRN_DASHBOARD=livewire` and
+  `CAIRN_DASHBOARD=inertia` both served the Blade dashboard and answered 200 —
+  a driver doing nothing at all was indistinguishable from one that worked. The
+  adapters had been written but never routed: the Inertia controller was
+  reachable from nothing but its own test. The route now asks
+  `Integrations::dashboardController()`, which selects by driver and falls back
+  to Blade when the optional package is not installed. Livewire gains a page
+  controller, since the component carries no document of its own — it is also
+  meant to be dropped into a host application's layout, and still can be.
+
+  The adapters were covered from the day they were written, by a
+  `Livewire::test()` on the component and a direct `props()` call on the
+  Inertia controller. Neither ever requested the dashboard URL, which is how
+  the gap between "the adapter works" and "selecting the adapter works" stayed
+  invisible. The new tests assert the route.
+
 - **The Today chart was hourly but labelled by date.** The series was already
   bucketed by hour; every label was rendered with `toFormattedDateString()`,
   so all 24 points — both axis ends and every row of the data table — read as
