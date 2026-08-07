@@ -320,6 +320,17 @@ a { color: inherit; }
 .chart-grid { stroke: var(--edge-soft); stroke-width: 1; }
 .chart-label { fill: var(--ink-faint); font-size: 10px; }
 
+/* Hover readout. The <title> in each group is what the browser shows; these
+   rules only mark which point the tooltip belongs to. */
+.chart-hit { fill: transparent; }
+.chart-dot { fill: var(--accent); opacity: 0; }
+.chart-point:hover .chart-hit { fill: var(--accent-soft); }
+.chart-point:hover .chart-dot { opacity: 1; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .chart-dot { transition: opacity 120ms ease-out; }
+}
+
 details.data { margin-top: 10px; }
 details.data summary {
     cursor: pointer;

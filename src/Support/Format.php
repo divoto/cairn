@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Support;
 
+use Carbon\CarbonImmutable;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\MetricUnit;
+use Divoto\Cairn\Enums\Period;
 
 /**
  * Turns a metric's raw number into something readable.
@@ -36,6 +38,27 @@ final class Format
             MetricUnit::Currency => number_format($value, 2),
             MetricUnit::Decimal => number_format($value, 2),
             MetricUnit::Count => self::count($value),
+        };
+    }
+
+    /**
+     * Label a timeseries bucket at the granularity it was measured at.
+     *
+     * A bucket only means something alongside its interval: 24 hourly buckets
+     * formatted as dates are 24 copies of today's date, which says nothing
+     * about which hour is which. Each interval therefore names the part of the
+     * timestamp that actually varies across the series.
+     */
+    public static function bucket(?CarbonImmutable $bucket, Period $interval): string
+    {
+        if (! $bucket instanceof CarbonImmutable) {
+            return '—';
+        }
+
+        return match ($interval) {
+            Period::Hour => $bucket->format('H:i'),
+            Period::Day => $bucket->toFormattedDateString(),
+            Period::Month => $bucket->format('M Y'),
         };
     }
 

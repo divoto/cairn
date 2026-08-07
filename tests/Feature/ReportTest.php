@@ -7,6 +7,7 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Data\Entry;
+use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\Comparison;
 use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\EntryType;
@@ -224,6 +225,101 @@ it('returns empty buckets as zero rather than omitting them', function (): void 
     expect($series)->toHaveCount(4)
         ->and(row($series, 0)->metric(Metric::Pageviews))->toBe(0.0)
         ->and(row($series, 3)->metric(Metric::Pageviews))->toBe(0.0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Visitors below a day
+|--------------------------------------------------------------------------
+|
+| Uniqueness is counted per calendar day and cannot be subdivided: the salt
+| rotates every 24 hours, so a day is the smallest set there is anything to
+| deduplicate within. An hourly bucket therefore has no visitor figure, and
+| must say so rather than borrowing the day's.
+|
+*/
+
+function seedOneDay(): void
+{
+    record('2026-03-14 09:00:00');
+    record('2026-03-14 10:00:00');
+
+    // Two distinct visitors, counted against the day.
+    app(UniqueCounter::class)->add('2026-03-14', 'overall', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-14', 'overall', random_bytes(16));
+}
+
+/**
+ * @return Collection<int, ReportRow>
+ */
+function aDayOf(Period $interval): Collection
+{
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        $interval,
+    );
+
+    return Cairn::report()
+        ->between(
+            CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        )
+        ->metrics(Metric::Pageviews, Metric::Visitors)
+        ->interval($interval)
+        ->timeseries();
+}
+
+it('omits visitors from an hourly series rather than repeating the day total', function (): void {
+    seedOneDay();
+
+    $series = aDayOf(Period::Hour);
+
+    // The 09:00 bucket has its own pageview...
+    expect($series)->toHaveCount(24)
+        ->and(row($series, 9)->metric(Metric::Pageviews))->toBe(1.0)
+        // ...but no visitor count, because the day's two visitors cannot be
+        // attributed to the hour they arrived in.
+        ->and(row($series, 9)->metric(Metric::Visitors))->toBeNull()
+        // Not even in a quiet hour, where borrowing the day total would be
+        // most obviously wrong: no pageviews, yet two visitors.
+        ->and(row($series, 3)->metric(Metric::Pageviews))->toBe(0.0)
+        ->and(row($series, 3)->metric(Metric::Visitors))->toBeNull();
+});
+
+it('still counts visitors when a bucket is a whole day', function (): void {
+    seedOneDay();
+
+    $series = aDayOf(Period::Day);
+
+    expect($series)->toHaveCount(1)
+        ->and(row($series, 0)->metric(Metric::Visitors))->toBe(2.0);
+});
+
+/**
+ * The headline figure is not a bucket in the series — it covers the whole
+ * window, and for "today" that window is a day. Dropping the hourly figure
+ * must not drop the total as well.
+ */
+it('still reports visitors for the window when charting it hourly', function (): void {
+    seedOneDay();
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $total = Cairn::report()
+        ->between(
+            CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        )
+        ->metrics(Metric::Pageviews, Metric::Visitors)
+        ->interval(Period::Hour)
+        ->total();
+
+    expect($total->metric(Metric::Visitors))->toBe(2.0);
 });
 
 /*

@@ -1,10 +1,17 @@
 @php
     use Divoto\Cairn\Enums\Metric;
+    use Divoto\Cairn\Enums\Period;
     use Divoto\Cairn\Support\Format;
 
     $row = $widget->rows($filters)->first();
     $schema = $widget->schema();
     $points = $series ?? collect();
+    $interval = $filters->interval();
+
+    // Visitors are counted per calendar day, so an hourly series has no
+    // visitor figure to show. Said once here rather than repeated as an
+    // em dash the reader has to interpret.
+    $hourly = $interval === Period::Hour;
 
     // Chart geometry. Computed here rather than in JavaScript so the chart is
     // in the HTML — readable with scripting disabled, and printable.
@@ -55,6 +62,10 @@
 
         $line = implode(' ', $coords);
         $area = '0,'.$height.' '.$line.' '.$width.','.$height;
+
+        // One hover column per point, so the readout is reachable anywhere in
+        // the band above a value rather than only on the line itself.
+        $band = $width / max(1, $points->count());
     @endphp
 
     <svg class="chart" viewBox="0 0 {{ $width }} {{ $height + 18 }}" role="img"
@@ -63,11 +74,36 @@
         <polygon class="chart-area" points="{{ $area }}" />
         <polyline class="chart-line" points="{{ $line }}" />
 
+        {{-- Hover readouts. Native <title> rather than scripted tooltips, so
+             the values survive with JavaScript disabled and are announced by a
+             screen reader. The table below remains the accessible path. --}}
+        @foreach ($points as $index => $point)
+            @php
+                $pageviews = $point->metric(Metric::Pageviews);
+                $visitors = $point->metric(Metric::Visitors);
+
+                $x = $count === 0 ? 0 : ($index / $count) * $width;
+                $y = $height - (($pageviews ?? 0.0) / $peak) * ($height - 12);
+
+                $readout = Format::bucket($point->bucket, $interval)
+                    .' · '.Format::metric(Metric::Pageviews, $pageviews).' pageviews'
+                    .($visitors === null ? '' : ' · '.Format::metric(Metric::Visitors, $visitors).' visitors');
+            @endphp
+
+            <g class="chart-point">
+                <title>{{ $readout }}</title>
+                <rect class="chart-hit"
+                      x="{{ round(max(0, $x - $band / 2), 2) }}" y="0"
+                      width="{{ round($band, 2) }}" height="{{ $height }}" />
+                <circle class="chart-dot" cx="{{ round($x, 2) }}" cy="{{ round($y, 2) }}" r="3.5" />
+            </g>
+        @endforeach
+
         <text class="chart-label" x="0" y="{{ $height + 14 }}">
-            {{ $points->first()?->bucket?->toFormattedDateString() }}
+            {{ Format::bucket($points->first()?->bucket, $interval) }}
         </text>
         <text class="chart-label" x="{{ $width }}" y="{{ $height + 14 }}" text-anchor="end">
-            {{ $points->last()?->bucket?->toFormattedDateString() }}
+            {{ Format::bucket($points->last()?->bucket, $interval) }}
         </text>
     </svg>
 
@@ -77,7 +113,14 @@
         <summary>Show these figures as a table</summary>
 
         <table>
-            <caption>Pageviews and visitors per {{ $filters->interval()->value }}</caption>
+            <caption>
+                Pageviews and visitors per {{ $interval->value }}
+                @if ($hourly)
+                    — visitors are counted per day, because the visitor salt
+                    rotates every 24 hours and there is no smaller set to
+                    deduplicate within, so no hourly figure exists.
+                @endif
+            </caption>
             <thead>
                 <tr>
                     <th scope="col">Period</th>
@@ -88,7 +131,7 @@
             <tbody>
                 @foreach ($points as $point)
                     <tr>
-                        <th scope="row">{{ $point->bucket?->toFormattedDateString() }}</th>
+                        <th scope="row">{{ Format::bucket($point->bucket, $interval) }}</th>
                         <td class="num">{{ Format::metric(Metric::Pageviews, $point->metric(Metric::Pageviews)) }}</td>
                         <td class="num">{{ Format::metric(Metric::Visitors, $point->metric(Metric::Visitors)) }}</td>
                     </tr>

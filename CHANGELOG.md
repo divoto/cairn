@@ -9,6 +9,36 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
+## [0.3.0] - 2026-08-07
+
+### Fixed
+
+- **The Today chart was hourly but labelled by date.** The series was already
+  bucketed by hour; every label was rendered with `toFormattedDateString()`,
+  so all 24 points — both axis ends and every row of the data table — read as
+  today's date. `Format::bucket()` now labels a bucket at the granularity it
+  was measured at: `09:00` for an hour, `Mar 14, 2026` for a day, `Mar 2026`
+  for a month.
+
+- **Today reported the whole day's visitors against every hour.** `Report`'s
+  visitor count always iterated *day* buckets regardless of the charting
+  interval, so a one-hour window returned the entire day's figure — a flat
+  line that read as a real hourly measurement. There is no hourly number to
+  report: uniqueness is counted per calendar day because the salt rotates
+  every 24 hours, so a day is the smallest set there is anything to
+  deduplicate within. The metric is now omitted from hourly rows rather than
+  misreported, rendering as an em dash with the reason given under the table.
+  Window totals are unchanged — a "today" total is still today's visitors,
+  because that window *is* a day.
+
+### Added
+
+- **Hover readouts on the overview chart.** Each point carries an invisible
+  full-height target and a native SVG `<title>` giving the bucket and its
+  figures. No JavaScript: the values survive with scripting disabled, are
+  announced by a screen reader, and the data table underneath remains the
+  accessible path.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added
@@ -176,6 +206,10 @@ First public release.
   confined to `Divoto\Cairn\Integrations`.
 - Continuous integration across PHP 8.2–8.4 and Laravel 12–13, plus a database
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
+
+[Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[0.3.0]: https://github.com/divoto/cairn/releases/tag/v0.3.0
 
 [0.2.0]: https://github.com/divoto/cairn/releases/tag/v0.2.0
 

@@ -237,6 +237,45 @@ it('charts a single day by hour and a year by month', function (): void {
         ->and((new Filters(range: '12m'))->interval())->toBe(Period::Month);
 });
 
+/**
+ * Formatting an hourly bucket as a date prints today's date 24 times, which
+ * tells the reader nothing about which hour is which.
+ */
+it('labels an hourly chart by hour rather than by date', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn?range=today')->assertOk()->getContent());
+
+    // Seeded traffic all lands in the 09:00 bucket.
+    expect($html)->toContain('09:00')
+        ->and($html)->toContain('00:00')
+        ->and($html)->not->toContain(CarbonImmutable::now('UTC')->toFormattedDateString());
+});
+
+/**
+ * Visitors are counted per day, so an hourly bucket has none. Showing the
+ * day's total against every hour would read as a real hourly measurement.
+ */
+it('shows no per-hour visitor count but keeps the day total', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn?range=today')->assertOk()->getContent());
+
+    // The table says why the column is empty rather than leaving the reader to
+    // interpret a row of em dashes. The headline figure is unaffected — that
+    // covers the whole window, which today *is* a day; see ReportTest.
+    expect($html)->toContain('visitors are counted per day');
+});
+
+it('gives every chart point a hover readout that needs no JavaScript', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn?range=today')->assertOk()->getContent());
+
+    expect($html)->toContain('<title>09:00 · 5 pageviews</title>')
+        ->and($html)->toContain('class="chart-hit"');
+});
+
 it('caps a filter value read from the URL', function (): void {
     $filters = Filters::fromRequest(
         Request::create('/cairn?route='.str_repeat('a', 5000))

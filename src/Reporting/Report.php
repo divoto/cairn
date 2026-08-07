@@ -230,11 +230,25 @@ final class Report
             ));
 
             $totals = $this->sumMetrics($measured);
-            $totals = $this->withVisitors($totals, $bucket, $end);
+
+            // Visitors are counted per day and cannot be cut finer (see
+            // withVisitors). Asking for the visitors in one hour would return
+            // the whole day's count for every hour of it — a flat line that
+            // reads as a real hourly measurement. The metric is dropped from
+            // the row instead, which renders as an em dash.
+            if ($this->countsVisitorsPerBucket()) {
+                $totals = $this->withVisitors($totals, $bucket, $end);
+            }
+
+            $metrics = $this->derive($totals);
+
+            if (! $this->countsVisitorsPerBucket()) {
+                unset($metrics[Metric::Visitors->value]);
+            }
 
             $rows[] = new ReportRow(
                 dimensions: [],
-                metrics: $this->derive($totals),
+                metrics: $metrics,
                 approximate: $this->isApproximate($bucket, $end),
                 bucket: $bucket,
             );
@@ -488,6 +502,22 @@ final class Report
         }
 
         return $totals;
+    }
+
+    /**
+     * Whether a bucket of the current interval can carry a visitor count.
+     *
+     * The unique counter is keyed by calendar day and cannot be subdivided:
+     * the salt rotates every 24 hours, so a day is the smallest set there is
+     * anything to deduplicate within. A day or month bucket is a whole number
+     * of days and counts fine; an hour bucket has no set of its own.
+     *
+     * Totals over the whole window are unaffected — a "today" report still
+     * reports today's visitors, because that window *is* a day.
+     */
+    private function countsVisitorsPerBucket(): bool
+    {
+        return $this->interval !== Period::Hour;
     }
 
     /**

@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use Carbon\CarbonImmutable;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
+use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Enums\RouteGrouping;
 use Divoto\Cairn\Support\ChannelClassifier;
 use Divoto\Cairn\Support\Engine;
@@ -86,6 +88,24 @@ it('renders server timings in milliseconds or seconds', function (): void {
 it('formats every metric without erroring', function (Metric $metric): void {
     expect(Format::metric($metric, 12.5))->not->toBe('');
 })->with(array_map(static fn (Metric $m): array => [$m], Metric::cases()));
+
+/**
+ * A bucket label has to name the part of the timestamp that varies across the
+ * series. Formatting 24 hourly buckets as dates prints today's date 24 times.
+ */
+it('labels a bucket at the granularity it was measured at', function (Period $interval, string $expected): void {
+    $bucket = CarbonImmutable::parse('2026-03-14 09:00:00', 'UTC');
+
+    expect(Format::bucket($bucket, $interval))->toBe($expected);
+})->with([
+    'hour' => [Period::Hour, '09:00'],
+    'day' => [Period::Day, 'Mar 14, 2026'],
+    'month' => [Period::Month, 'Mar 2026'],
+]);
+
+it('renders a missing bucket as an em dash', function (): void {
+    expect(Format::bucket(null, Period::Day))->toBe('—');
+});
 
 /*
 |--------------------------------------------------------------------------
