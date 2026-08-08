@@ -27,9 +27,15 @@
     @if ($filters->isFiltered())
         <div class="chips">
             @foreach ($filters->active() as $dimension => $value)
+                @php
+                    // Chips read what the table reads: a chip saying "country
+                    // PK" while the row above it says "Pakistan" looks like two
+                    // different filters.
+                    $enum = Divoto\Cairn\Enums\Dimension::tryFrom($dimension);
+                @endphp
                 <a class="chip" href="{{ $query([$dimension => null]) }}"
                    aria-label="Remove the {{ $dimension }} filter">
-                    <b>{{ $dimension }}</b> {{ $value }} <span aria-hidden="true">✕</span>
+                    <b>{{ $dimension }}</b> {{ $enum?->display($value) ?? $value }} <span aria-hidden="true">✕</span>
                 </a>
             @endforeach
         </div>
@@ -59,7 +65,7 @@
             $rows = $widget->rows($filters);
         @endphp
 
-        <section class="panel @if ($schema->layout === WidgetLayout::Feed) panel-wide @endif"
+        <section class="panel @if ($schema->isWide()) panel-wide @endif"
                  aria-labelledby="w-{{ $widget->key() }}">
             <div class="panel-head">
                 <h2 id="w-{{ $widget->key() }}">{{ $widget->title() }}</h2>

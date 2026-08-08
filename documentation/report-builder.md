@@ -152,5 +152,11 @@ Register it in `cairn.dashboard.widgets`. For anything that is not a ranked
 table of one dimension, extend `Widget` directly and implement `query()` and
 `schema()`.
 
+Panels sit in a grid three-ish across. A dimension whose values are long can
+override `protected function wide(): bool` to take the whole row instead —
+`Top routes` does, because a route name in a third of a row is mostly ellipsis.
+Put wide panels last in the widget list: one in the middle leaves a gap beside
+the panel before it, since nothing narrow can be pulled up to fill the row.
+
 A widget whose query fails is contained to its own panel — the rest of the
 dashboard still renders.

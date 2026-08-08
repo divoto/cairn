@@ -8,6 +8,7 @@ use Divoto\Cairn\CairnServiceProvider;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Env;
 use Laravel\Pulse\PulseServiceProvider;
+use Livewire\Livewire;
 use Livewire\LivewireServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
@@ -84,6 +85,23 @@ abstract class TestCase extends Orchestra
         // installed here. ConfigurationTest asserts the real default — this
         // only makes the routes resolvable in the test application.
         $config->set('cairn.api.middleware', ['api']);
+    }
+
+    /**
+     * Reset the state Livewire keeps in statics.
+     *
+     * "A component has been rendered" is a static flag, and Livewire injects
+     * its asset tags into any 200 HTML response once it is set. Testbench
+     * rebuilds the application between tests but the static outlives it, so a
+     * test that renders a Livewire component would otherwise put Livewire's
+     * <script> into the next test's plain server-rendered page — which the
+     * no-JavaScript assertion in DashboardTest reads as a second script.
+     */
+    protected function tearDown(): void
+    {
+        Livewire::flushState();
+
+        parent::tearDown();
     }
 
     /**

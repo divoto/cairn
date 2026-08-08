@@ -393,7 +393,6 @@ return [
         'widgets' => [
             Overview::class,
             LiveVisitors::class,
-            TopRoutes::class,
             Referrers::class,
             Channels::class,
             Countries::class,
@@ -405,6 +404,10 @@ return [
             Mediums::class,
             Events::class,
             ConversionsWidget::class,
+
+            // Full-width panels last: one placed mid-grid leaves a gap beside
+            // whatever narrow panel precedes it.
+            TopRoutes::class,
             ActivityFeed::class,
         ],
     ],

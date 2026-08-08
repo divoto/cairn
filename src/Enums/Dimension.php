@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Enums;
 
+use Divoto\Cairn\Support\CountryNames;
+
 /**
  * Something a report can be grouped or filtered by.
  *
@@ -120,12 +122,21 @@ enum Dimension: string
      * Channel, device type, browser and operating system are stored as small
      * integers — the column is written on every pageview, and the enum case
      * values are permanent. Rendering the stored value would put "3" on the
-     * dashboard where "Social" belongs.
+     * dashboard where "Social" belongs. Country is the same problem in another
+     * alphabet: "PK" is what a geo database returns, "Pakistan" is what a
+     * reader wants.
+     *
+     * A value with no known label falls back to itself. Being shown a code you
+     * have to look up beats being shown a dash.
      */
     public function display(string|int|null $value): string
     {
         if ($value === null || $value === '') {
             return '—';
+        }
+
+        if ($this === self::Country) {
+            return CountryNames::label((string) $value) ?? (string) $value;
         }
 
         $numeric = is_numeric($value) ? (int) $value : null;

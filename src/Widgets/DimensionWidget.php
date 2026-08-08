@@ -53,7 +53,21 @@ abstract class DimensionWidget extends Widget
             dimension: $this->dimension()->value,
             metrics: $this->defaultMetrics(),
             filterAs: $this->filterable() ? $this->dimension()->value : null,
+            wide: $this->wide(),
         );
+    }
+
+    /**
+     * Whether this table should span the full width of the grid.
+     *
+     * Off by default: the point of the grid is that most of these tables are
+     * short lists of short values, and three narrow panels side by side read
+     * faster than three wide ones stacked. A dimension whose values are long —
+     * a route, a URL — is the exception.
+     */
+    protected function wide(): bool
+    {
+        return false;
     }
 
     /**

@@ -38,6 +38,8 @@ export interface Widget {
     title: string;
     description: string | null;
     layout: WidgetLayout;
+    /** True when the panel wants the full width of the grid row. */
+    wide: boolean;
     dimension: string | null;
     metrics: MetricDefinition[];
     /** Shown instead of the rows when there are none. */

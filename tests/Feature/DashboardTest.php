@@ -142,6 +142,44 @@ it('renders the dashboard with data', function (): void {
         ->assertSee('pricing.index');
 });
 
+/**
+ * A route name is the longest value on the dashboard, so its panel takes the
+ * whole row — and a wide panel in the middle of the grid leaves a gap beside
+ * the narrow panel before it, so it sits with the feed at the end.
+ */
+it('draws top routes as a full-width panel above the activity feed', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn')->assertOk()->getContent());
+
+    preg_match('/<section class="([^"]*)"\s+aria-labelledby="w-top-routes"/', $html, $panel);
+
+    expect($panel[1] ?? '')->toContain('panel-wide')
+        ->and(strpos($html, 'w-top-routes'))->toBeLessThan((int) strpos($html, 'w-activity-feed'));
+});
+
+/**
+ * "PK" is what a geo database returns; it is not what anybody wants to read.
+ */
+it('names a country rather than showing its code', function (): void {
+    seedTraffic();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('United Kingdom')
+        ->assertSee('Germany')
+        ->assertDontSee('>GB<', false);
+});
+
+it('names the country in an active filter chip too', function (): void {
+    seedTraffic();
+
+    cairnTest()->get('/cairn?country=GB')
+        ->assertOk()
+        ->assertSee('Remove the country filter')
+        ->assertSee('United Kingdom');
+});
+
 it('renders on an installation with no data at all', function (): void {
     cairnTest()->get('/cairn')
         ->assertOk()

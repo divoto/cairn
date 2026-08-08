@@ -37,4 +37,13 @@ final class TopRoutes extends DimensionWidget
     {
         return Dimension::Route;
     }
+
+    /**
+     * Routes are long — a named route or a path is the widest value on the
+     * dashboard, and in a third of a row it truncates on almost every entry.
+     */
+    protected function wide(): bool
+    {
+        return true;
+    }
 }

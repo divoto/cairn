@@ -51,7 +51,6 @@ final readonly class WidgetRegistry
     public const DEFAULTS = [
         Overview::class,
         LiveVisitors::class,
-        TopRoutes::class,
         Referrers::class,
         Channels::class,
         Countries::class,
@@ -63,6 +62,11 @@ final readonly class WidgetRegistry
         Mediums::class,
         Events::class,
         Conversions::class,
+
+        // The two full-width panels close the page, narrow panels above them.
+        // A wide panel in the middle of the grid leaves a gap beside the panel
+        // before it, because nothing narrow can be pulled up to fill the row.
+        TopRoutes::class,
         ActivityFeed::class,
     ];
 

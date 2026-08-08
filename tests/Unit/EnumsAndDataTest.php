@@ -63,8 +63,20 @@ it('renders a stored lookup value as its label', function (): void {
 });
 
 it('passes a non-lookup dimension through unchanged', function (): void {
-    expect(Dimension::Route->display('pricing.index'))->toBe('pricing.index')
-        ->and(Dimension::Country->display('GB'))->toBe('GB');
+    expect(Dimension::Route->display('pricing.index'))->toBe('pricing.index');
+});
+
+it('renders a country code as its name', function (): void {
+    expect(Dimension::Country->display('GB'))->toBe('United Kingdom')
+        ->and(Dimension::Country->display('pk'))->toBe('Pakistan');
+});
+
+/**
+ * A geo database is free to return a code this list has never heard of, and a
+ * row that says "ZZ" is still more use to a reader than a row that says nothing.
+ */
+it('passes through a country code it does not know', function (): void {
+    expect(Dimension::Country->display('ZZ'))->toBe('ZZ');
 });
 
 it('renders an absent dimension value as a dash', function (): void {

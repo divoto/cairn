@@ -23,6 +23,7 @@ final readonly class WidgetSchema
      * @param  string|null  $filterAs  The query-string key clicking a row filters on.
      * @param  string|null  $empty  What to say when there is nothing to show.
      * @param  bool  $requiresBeacon  Whether this widget needs the optional JS beacon.
+     * @param  bool  $wide  Whether the panel should span the full grid row.
      */
     public function __construct(
         public WidgetLayout $layout,
@@ -32,7 +33,19 @@ final readonly class WidgetSchema
         public ?string $empty = null,
         public bool $requiresBeacon = false,
         public int $limit = 10,
+        public bool $wide = false,
     ) {}
+
+    /**
+     * Whether the renderer should give this widget the whole row.
+     *
+     * A feed is always wide — its rows are a hash, a path and a time, which in
+     * a third of a row wrap into something unreadable. Anything else asks.
+     */
+    public function isWide(): bool
+    {
+        return $this->wide || $this->layout === WidgetLayout::Feed;
+    }
 
     /**
      * The message shown when a widget has no data.

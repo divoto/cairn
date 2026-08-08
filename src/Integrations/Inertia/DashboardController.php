@@ -63,6 +63,7 @@ final readonly class DashboardController
                     'title' => $widget->title(),
                     'description' => $widget->description(),
                     'layout' => $widget->schema()->layout->value,
+                    'wide' => $widget->schema()->isWide(),
                     'dimension' => $widget->schema()->dimension,
                     'metrics' => array_map(
                         static fn (Metric $metric): array => [

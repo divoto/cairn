@@ -9,6 +9,40 @@ While the version number is below `1.0.0`, minor releases may contain breaking
 changes. The jump to `1.0.0` is a promise about stability and will not be made
 until the package has run in production for a meaningful period.
 
+## [0.4.0] - 2026-08-08
+
+### Changed
+
+- **Countries are named, not coded.** The dashboard printed what the geo
+  database returns — `PK`, `AE`, `AU` — which is a lookup exercise rather than
+  a reading. `Dimension::Country->display()` now resolves the ISO 3166-1
+  alpha-2 code through `Support\CountryNames`, an inlined CLDR table, and the
+  filter chips read the same way so a chip cannot say `country PK` above a row
+  that says `Pakistan`. The table is inlined rather than read from `ext-intl`:
+  a label is not worth an extension requirement. An unknown code still shows
+  itself, which is more use to a reader than a dash. Stored values, filter
+  links and the API are untouched — this is presentation only.
+
+- **Top routes takes the full width of the grid, and sits with the activity
+  feed at the end of it.** A route name or a path is the longest value on the
+  dashboard and was being ellipsised in a third of a row. Panels now declare
+  their width through `WidgetSchema::$wide`, which `DimensionWidget` exposes as
+  a `wide()` hook, and the renderers ask `isWide()` instead of testing for the
+  feed layout. The two wide panels close the page because a wide panel placed
+  mid-grid leaves a hole beside whatever narrow panel precedes it. The Inertia
+  payload gained a `wide` flag so a custom front end can lay out the same way.
+
+### Fixed
+
+- **Livewire's asset tags leaked between tests.** "A component has been
+  rendered" is a static flag, and Livewire injects its `<script>` into any 200
+  HTML response once it is set; Testbench rebuilds the application between
+  tests but not that static. A test rendering a Livewire component therefore
+  put Livewire's script into the *next* test's plain server-rendered page,
+  which the no-JavaScript assertion reads as a second script — a failure that
+  appeared and vanished with the random ordering seed. The base test case now
+  flushes Livewire state on teardown.
+
 ## [0.3.0] - 2026-08-07
 
 ### Fixed
