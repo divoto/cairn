@@ -1,0 +1,107 @@
+{
+    "name": "divoto/cairn",
+    "description": "Cairn — privacy-first, self-hosted web analytics for Laravel. Cookieless pageview, session and event tracking with a built-in dashboard. No consent banner required in the default configuration. A self-hosted alternative to Google Analytics and Matomo, integrated with your Eloquent models.",
+    "keywords": [
+        "laravel",
+        "analytics",
+        "statistics",
+        "privacy",
+        "gdpr",
+        "cookieless",
+        "self-hosted",
+        "tracking",
+        "pageviews",
+        "dashboard",
+        "matomo",
+        "google-analytics",
+        "web-analytics"
+    ],
+    "homepage": "https://github.com/divoto/cairn",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ivaylo Botyov Nikolov",
+            "email": "divoto@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/divoto/cairn/issues",
+        "source": "https://github.com/divoto/cairn",
+        "docs": "https://ifhighlow.com/portfolio/cairn-privacy-first-analytics-for-laravel"
+    },
+    "require": {
+        "php": "^8.2",
+        "illuminate/cache": "^12.0|^13.0",
+        "illuminate/console": "^12.0|^13.0",
+        "illuminate/contracts": "^12.0|^13.0",
+        "illuminate/database": "^12.0|^13.0",
+        "illuminate/events": "^12.0|^13.0",
+        "illuminate/http": "^12.0|^13.0",
+        "illuminate/routing": "^12.0|^13.0",
+        "illuminate/support": "^12.0|^13.0",
+        "illuminate/view": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "geoip2/geoip2": "^3.0",
+        "inertiajs/inertia-laravel": "^2.0",
+        "larastan/larastan": "^3.0",
+        "laravel/pint": "^1.20",
+        "laravel/pulse": "^1.0",
+        "livewire/livewire": "^3.0",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0|^4.0",
+        "rector/rector": "^2.0"
+    },
+    "suggest": {
+        "ext-redis": "Enables the Redis ingest, unique-counter and presence drivers for higher throughput",
+        "livewire/livewire": "Enables the reactive dashboard and live-updating widgets",
+        "inertiajs/inertia-laravel": "Enables the Inertia dashboard adapter",
+        "laravel/pulse": "Enables the Cairn live-visitors and top-routes Pulse cards",
+        "matomo/device-detector": "More accurate browser, OS and device detection",
+        "geoip2/geoip2": "Enables MaxMindGeoResolver for country reporting from a local database, with no third-party request"
+    },
+    "autoload": {
+        "psr-4": {
+            "Divoto\\Cairn\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Divoto\\Cairn\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "test:coverage": "pest --coverage --min=90",
+        "analyse": "phpstan analyse",
+        "format": "pint",
+        "format:check": "pint --test",
+        "rector": "rector process",
+        "rector:check": "rector process --dry-run",
+        "assets:minify": "npx --yes terser@5 resources/js/cairn.js --compress passes=3 --mangle --format quote_style=1 -o resources/dist/cairn.min.js"
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.2.0"
+        },
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "phpstan/extension-installer": true
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Divoto\\Cairn\\CairnServiceProvider"
+            ],
+            "aliases": {
+                "Cairn": "Divoto\\Cairn\\Facades\\Cairn"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

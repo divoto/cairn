@@ -1,0 +1,45 @@
+name: Feature request
+description: Suggest something Cairn should do.
+labels: [enhancement]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Cairn's value comes partly from what it refuses to do. Before opening
+        this, please check that your idea does not require:
+
+        - persisting a raw IP address;
+        - reconstructing visitor identity across days;
+        - a cookie in the default configuration;
+        - a hard dependency on Redis, Livewire, Inertia, Pulse or a frontend
+          build step;
+        - scanning raw entries from a default dashboard view.
+
+        These are product-defining constraints, not current limitations.
+
+        Deliberately out of scope for v1: funnels, cohort analysis, heatmaps,
+        session replay, A/B testing, e-commerce product analytics, attribution
+        modelling beyond last-click, email reports, alerting, and a ClickHouse
+        storage driver.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to find out that Cairn cannot tell you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like Cairn to do
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you have tried instead
+      description: Custom recorders, custom widgets, the report builder, a separate tool.

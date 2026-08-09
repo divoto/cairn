@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="./vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="random"
+         failOnWarning="true"
+         failOnRisky="true"
+         failOnEmptyTestSuite="true"
+         beStrictAboutOutputDuringTests="true">
+    <testsuites>
+        <testsuite name="Cairn Test Suite">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+
+    <php>
+        <!-- Project rule: SQLite is the default test target. MySQL, MariaDB and
+             PostgreSQL run as separate CI jobs by overriding these. -->
+        <env name="DB_CONNECTION" value="testing"/>
+
+        <!-- The salt lives in the cache, so a cache store the testbench
+             application has no table for takes VisitorHasher down — and
+             TrackPageView swallows the failure, so it surfaces as pageviews
+             that were never recorded rather than as an error. Pinned here
+             because testbench's own skeleton .env sets it to `database`.
+             Not forced: a CI job may still override it. -->
+        <env name="CACHE_STORE" value="array"/>
+        <env name="CAIRN_ENABLED" value="true"/>
+        <env name="CAIRN_DRIVER" value="database"/>
+    </php>
+</phpunit>
