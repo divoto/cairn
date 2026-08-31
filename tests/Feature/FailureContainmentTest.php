@@ -21,6 +21,7 @@ use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
@@ -143,6 +144,12 @@ it('always draws the lottery when it is certain', function (): void {
     expect(app(Maintenance::class)->wins())->toBeTrue();
 });
 
+it('runs maintenance through tick when the lottery wins', function (): void {
+    config()->set('cairn.ingest.lottery', [100, 100]);
+
+    expect(app(Maintenance::class)->tick())->toBeTrue();
+});
+
 it('ignores a malformed lottery setting', function (mixed $lottery): void {
     config()->set('cairn.ingest.lottery', $lottery);
 
@@ -190,6 +197,31 @@ it('reports zero live visitors in the widget rather than failing', function (): 
     $row = row(app(LiveVisitors::class)->rows(new Filters(range: 'today')));
 
     expect($row->metrics['live'] ?? null)->toBe(0.0);
+});
+
+/**
+ * Unlike LiveVisitors, this widget holds its own Presence dependency rather
+ * than reaching it through Cairn — Cairn::live() already swallows every
+ * failure before it gets here, so this is the one widget catch that can
+ * actually be reached: presence itself, injected directly, throwing.
+ */
+it('returns an empty activity feed rather than failing', function (): void {
+    $widget = new ActivityFeed(app(Cairn::class), new class implements Presence
+    {
+        public function touch(string $visitor, ?string $page = null): void {}
+
+        public function count(): int
+        {
+            return 0;
+        }
+
+        public function recent(int $limit = 50): Collection
+        {
+            throw new RuntimeException('presence unavailable');
+        }
+    });
+
+    expect($widget->rows(new Filters(range: 'today')))->toBeEmpty();
 });
 
 /*

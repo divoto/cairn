@@ -364,6 +364,12 @@ it('honours an explicitly empty widget list', function (): void {
     cairnTest()->get('/cairn')->assertOk()->assertDontSee('Top routes');
 });
 
+it('shows nothing rather than failing when the widget list is not an array at all', function (): void {
+    config()->set('cairn.dashboard.widgets', 'nonsense');
+
+    expect(app(WidgetRegistry::class)->all())->toBe([]);
+});
+
 it('resolves a widget by key', function (): void {
     expect(app(WidgetRegistry::class)->find('top-routes'))->toBeInstanceOf(TopRoutes::class)
         ->and(app(WidgetRegistry::class)->find('nope'))->toBeNull();

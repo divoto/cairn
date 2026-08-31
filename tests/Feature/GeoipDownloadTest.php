@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Divoto\Cairn\Commands\GeoipCommand;
 use Divoto\Cairn\Exceptions\GeoDatabaseDownloadException;
 use Divoto\Cairn\Geo\MaxMindDownloader;
 use Divoto\Cairn\Geo\MaxMindGeoResolver;
@@ -178,6 +179,20 @@ it('reports the build date MaxMind stamped into the archive', function (): void 
     expect($result['built'])->toBe('2026-07-31');
 });
 
+/**
+ * The archive's inner directory does not always carry a date MaxMind
+ * publishes it under — a report shows the file installed regardless, just
+ * without knowing when it was built.
+ */
+it('reports no build date when the archive directory carries none', function (): void {
+    $archive = geoipArchive(geoipWorkspace(), date: 'latest');
+
+    $result = (new MaxMindDownloader(geoipTransport($archive)))
+        ->download('GeoLite2-Country', geoipTarget(), '123456', 'a-key');
+
+    expect($result['built'])->toBeNull();
+});
+
 it('reports the size of the installed database', function (): void {
     $archive = geoipArchive(geoipWorkspace(), contents: str_repeat('x', 4096));
 
@@ -244,6 +259,27 @@ it('leaves an existing database untouched when the checksum does not match', fun
 
     expect(fn (): array => $downloader->download('GeoLite2-Country', geoipTarget(), '123456', 'a-key'))
         ->toThrow(GeoDatabaseDownloadException::class, 'corrupt');
+
+    expect(file_get_contents(geoipTarget()))->toBe('the old database');
+});
+
+it('refuses when the published checksum is missing or unreadable', function (): void {
+    file_put_contents(geoipTarget(), 'the old database');
+
+    $transport = function (string $url, string $account, string $key, string $sink, ?Closure $progress): void {
+        if (str_ends_with($url, 'sha256')) {
+            // MaxMind answered, but with nothing a checksum could be read from.
+            file_put_contents($sink, '');
+
+            return;
+        }
+
+        throw new RuntimeException('the archive itself should never be requested');
+    };
+
+    expect(fn (): array => (new MaxMindDownloader($transport))
+        ->download('GeoLite2-Country', geoipTarget(), '123456', 'a-key'))
+        ->toThrow(GeoDatabaseDownloadException::class, 'missing or unreadable');
 
     expect(file_get_contents(geoipTarget()))->toBe('the old database');
 });
@@ -315,6 +351,103 @@ it('leaves no scratch files behind, whether it succeeds or fails', function (boo
 
     expect($leftovers)->toBe([]);
 })->with(['succeeds' => [true], 'fails' => [false]]);
+
+/*
+|--------------------------------------------------------------------------
+| Filesystem edge cases
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Grows a chain of directories one small component at a time until the
+ * filesystem refuses to create the next one — which on Linux happens once
+ * the full path passes PATH_MAX. What is returned is therefore a real,
+ * existing, writable directory sitting right at that boundary: appending
+ * anything at all to it reliably fails with ENAMETOOLONG.
+ */
+function longButCreatableDirectory(): string
+{
+    $path = geoipWorkspace().'/long';
+    mkdir($path, 0o755, true);
+
+    for ($i = 0; $i < 2000; $i++) {
+        $next = $path.'/'.str_repeat('a', 5);
+
+        if (! @mkdir($next, 0o755)) {
+            return $path;
+        }
+
+        $path = $next;
+    }
+
+    throw new RuntimeException('This filesystem accepted an implausibly long path.');
+}
+
+it('refuses when the destination directory exists but is not writable', function (): void {
+    $directory = geoipWorkspace().'/locked';
+    mkdir($directory, 0o755);
+    chmod($directory, 0o555);
+
+    try {
+        expect(fn (): array => (new MaxMindDownloader(geoipTransport('unused')))
+            ->download('GeoLite2-Country', $directory.'/GeoLite2-Country.mmdb', '123456', 'a-key'))
+            ->toThrow(GeoDatabaseDownloadException::class, 'Cannot write to');
+    } finally {
+        chmod($directory, 0o755);
+    }
+});
+
+it('refuses when the destination directory does not exist and cannot be created', function (): void {
+    $parent = geoipWorkspace().'/locked-parent';
+    mkdir($parent, 0o555);
+
+    try {
+        expect(fn (): array => (new MaxMindDownloader(geoipTransport('unused')))
+            ->download('GeoLite2-Country', $parent.'/child/GeoLite2-Country.mmdb', '123456', 'a-key'))
+            ->toThrow(GeoDatabaseDownloadException::class, 'Cannot write to');
+    } finally {
+        chmod($parent, 0o755);
+    }
+});
+
+/**
+ * The directory itself passes both checks above — it exists and is
+ * writable — but the scratch workspace created inside it never can, because
+ * its full path does not fit. Distinct from the two refusals above, which
+ * both fail before a workspace is ever attempted.
+ */
+it('refuses when the scratch workspace path is too long to create', function (): void {
+    $directory = longButCreatableDirectory();
+
+    expect(fn (): array => (new MaxMindDownloader(geoipTransport('unused')))
+        ->download('GeoLite2-Country', $directory.'/GeoLite2-Country.mmdb', '123456', 'a-key'))
+        ->toThrow(GeoDatabaseDownloadException::class, 'Cannot write to');
+});
+
+it('refuses to install when the destination path is itself a directory', function (): void {
+    mkdir(geoipTarget(), 0o755, true);
+
+    $archive = geoipArchive(geoipWorkspace());
+
+    expect(fn (): array => (new MaxMindDownloader(geoipTransport($archive)))
+        ->download('GeoLite2-Country', geoipTarget(), '123456', 'a-key'))
+        ->toThrow(GeoDatabaseDownloadException::class, 'could not move the database');
+});
+
+/**
+ * deleteTree() only ever runs on a workspace this class just created itself,
+ * so the early return for a directory that is already gone has no path to it
+ * through download() — it is a guard for a private helper's own contract,
+ * asserted directly.
+ */
+it('does nothing when asked to clean up a directory that no longer exists', function (): void {
+    $downloader = new MaxMindDownloader(geoipTransport('unused'));
+
+    $method = new ReflectionMethod($downloader, 'deleteTree');
+
+    expect(fn (): mixed => $method->invoke($downloader, geoipWorkspace().'/never-existed'))
+        ->not->toThrow(Throwable::class);
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -450,6 +583,39 @@ it('names the file after the edition rather than overwriting the configured one'
         ->and(is_file(geoipTarget()))->toBeFalse();
 });
 
+it('formats a size at or above one megabyte in megabytes rather than kilobytes', function (): void {
+    $command = new GeoipCommand;
+
+    $method = new ReflectionMethod($command, 'size');
+
+    expect($method->invoke($command, 1_100_000))->toBe('1.0MB')
+        ->and($method->invoke($command, 4096))->toBe('4KB');
+});
+
+/**
+ * Without `--path` or a configured `geo_database`, the download still has to
+ * land somewhere — the same default MaxMindGeoResolver falls back to when
+ * nothing points it anywhere else.
+ */
+it('falls back to the default install path when nothing configures one', function (): void {
+    config()->set('cairn.privacy.maxmind', ['account_id' => '123456', 'license_key' => 'a-key']);
+    config()->set('cairn.privacy.geo_database');
+
+    $archive = geoipArchive(geoipWorkspace());
+    app()->instance(MaxMindDownloader::class, new MaxMindDownloader(geoipTransport($archive)));
+
+    $target = base_path('storage/app/geoip/GeoLite2-Country.mmdb');
+
+    try {
+        geoip()->assertExitCode(0);
+
+        expect(is_file($target))->toBeTrue();
+    } finally {
+        @unlink($target);
+        @rmdir(dirname($target));
+    }
+});
+
 it('says what is still needed after downloading', function (): void {
     config()->set('cairn.privacy.maxmind', ['account_id' => '123456', 'license_key' => 'a-key']);
     config()->set('cairn.privacy.geo_resolver', NullGeoResolver::class);
@@ -489,6 +655,172 @@ it('warns that a city database holds more than country precision will store', fu
     ])
         ->expectsOutputToContain('more than Cairn will store')
         ->assertExitCode(0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| The real transport
+|--------------------------------------------------------------------------
+|
+| Everything above injects a fake transport, which is deliberate — the
+| download/verify/unpack/install pipeline should not depend on curl to be
+| tested. But curl() itself, the default transport nothing above ever runs,
+| still has to work. It has no URL of its own to redirect (the endpoint is a
+| private constant), so these call it directly against a local server that
+| actually speaks HTTP rather than reaching MaxMind.
+|
+*/
+
+function geoipFreePort(): int
+{
+    $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+
+    if ($socket === false) {
+        throw new RuntimeException("Could not reserve a port: {$errstr}");
+    }
+
+    $name = stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    $parts = explode(':', (string) $name);
+
+    return (int) end($parts);
+}
+
+/**
+ * @return array{process: resource, port: int}
+ */
+function startGeoipServer(): array
+{
+    $port = geoipFreePort();
+    $router = __DIR__.'/../Fixtures/geoip-router.php';
+
+    $process = proc_open(
+        ['php', '-S', "127.0.0.1:{$port}", $router],
+        [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes
+    );
+
+    if (! is_resource($process)) {
+        throw new RuntimeException('Could not start the geoip test server.');
+    }
+
+    $deadline = microtime(true) + 5;
+
+    while (microtime(true) < $deadline) {
+        $connection = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.1);
+
+        if ($connection !== false) {
+            fclose($connection);
+
+            return ['process' => $process, 'port' => $port];
+        }
+
+        usleep(20_000);
+    }
+
+    proc_terminate($process);
+
+    throw new RuntimeException('Timed out waiting for the geoip test server.');
+}
+
+/**
+ * @param  array{process: resource, port: int}  $server
+ */
+function stopGeoipServer(array $server): void
+{
+    proc_terminate($server['process']);
+    proc_close($server['process']);
+}
+
+function callRealCurl(MaxMindDownloader $downloader, string $url, string $sink, ?Closure $onProgress = null): void
+{
+    $method = new ReflectionMethod($downloader, 'curl');
+    $method->invoke($downloader, $url, 'test-account', 'test-key', $sink, $onProgress);
+}
+
+it('downloads through the real curl transport when nothing is injected', function (): void {
+    $server = startGeoipServer();
+    $sink = geoipWorkspace().'/real.bin';
+
+    try {
+        callRealCurl(new MaxMindDownloader, "http://127.0.0.1:{$server['port']}/?case=ok&size=4096", $sink);
+
+        expect(filesize($sink))->toBe(4096);
+    } finally {
+        stopGeoipServer($server);
+    }
+});
+
+it('reports progress through the real curl transport', function (): void {
+    $server = startGeoipServer();
+    $sink = geoipWorkspace().'/slow.bin';
+    $seen = [];
+
+    try {
+        callRealCurl(
+            new MaxMindDownloader,
+            "http://127.0.0.1:{$server['port']}/?case=slow",
+            $sink,
+            function (int $sofar, int $total) use (&$seen): void {
+                $seen[] = [$sofar, $total];
+            }
+        );
+
+        expect($seen)->not->toBeEmpty();
+
+        foreach ($seen as [$sofar, $total]) {
+            expect($total)->toBeGreaterThan(0)
+                ->and($sofar)->toBeLessThanOrEqual($total);
+        }
+    } finally {
+        stopGeoipServer($server);
+    }
+});
+
+it('throws when the real transport gets a non-200 response', function (): void {
+    $server = startGeoipServer();
+    $sink = geoipWorkspace().'/rejected.bin';
+
+    try {
+        expect(function () use ($server, $sink): void {
+            callRealCurl(
+                new MaxMindDownloader,
+                "http://127.0.0.1:{$server['port']}/?case=unauthorized",
+                $sink
+            );
+        })->toThrow(GeoDatabaseDownloadException::class, 'rejected the credentials');
+
+        expect(is_file($sink))->toBeFalse();
+    } finally {
+        stopGeoipServer($server);
+    }
+});
+
+it('throws when the real transport cannot reach the server', function (): void {
+    $sink = geoipWorkspace().'/unreachable.bin';
+
+    // Nothing listens on this port — curl fails to connect at all, rather
+    // than getting an HTTP response to reject.
+    expect(function () use ($sink): void {
+        callRealCurl(new MaxMindDownloader, 'http://127.0.0.1:1/', $sink);
+    })->toThrow(GeoDatabaseDownloadException::class, 'Could not reach MaxMind');
+
+    expect(is_file($sink))->toBeFalse();
+});
+
+it('throws when the real transport cannot open the sink for writing', function (): void {
+    $directory = geoipWorkspace().'/curl-locked';
+    mkdir($directory, 0o755);
+    chmod($directory, 0o555);
+
+    try {
+        expect(function () use ($directory): void {
+            callRealCurl(new MaxMindDownloader, 'http://127.0.0.1:1/', $directory.'/out.bin');
+        })->toThrow(GeoDatabaseDownloadException::class, 'Cannot write to');
+    } finally {
+        chmod($directory, 0o755);
+    }
 });
 
 /*

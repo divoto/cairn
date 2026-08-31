@@ -54,10 +54,17 @@ final class LiveVisitors extends Widget
             return new Collection([
                 new ReportRow(metrics: ['live' => (float) $this->cairn->live()]),
             ]);
-        } catch (Throwable $e) {
+        }
+        // Cairn::live() already wraps its own body in a catch-and-report and
+        // cannot itself throw, so this second layer has no path a test can
+        // reach — kept anyway as the same defence every other widget carries,
+        // in case that guarantee ever changes.
+        // @codeCoverageIgnoreStart
+        catch (Throwable $e) {
             report($e);
 
             return new Collection([new ReportRow(metrics: ['live' => 0.0])]);
         }
+        // @codeCoverageIgnoreEnd
     }
 }

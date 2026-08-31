@@ -87,6 +87,59 @@ it('leaves null and empty values alone', function (): void {
         ->and(Binary::bind(connection(), ''))->toBe('');
 });
 
+/**
+ * The test above already proves this on a real PostgreSQL connection when
+ * the suite runs against one. This proves it independently of which engine
+ * the default test connection happens to be, with a connection that reports
+ * PostgreSQL's driver name regardless.
+ */
+it('always emits a bytea literal rather than a bound parameter on PostgreSQL', function (): void {
+    $connection = new class(new PDO('sqlite::memory:')) extends Connection
+    {
+        public function getDriverName(): string
+        {
+            return 'pgsql';
+        }
+
+        protected function escapeBinary($value): string
+        {
+            return "'\\x".bin2hex((string) $value)."'::bytea";
+        }
+    };
+
+    $visitor = "\x00\xff\x01\xfe".random_bytes(12);
+
+    $bound = Binary::bind($connection, $visitor);
+
+    expect($bound)->toBeInstanceOf(ExpressionContract::class);
+
+    $literal = $bound instanceof ExpressionContract ? $bound->getValue($connection->getQueryGrammar()) : null;
+
+    expect($literal)->toBe("'\\x".bin2hex($visitor)."'::bytea");
+});
+
+it('leaves a row column absent rather than adding it as null', function (): void {
+    $row = Binary::bindRow(connection(), ['visitor' => random_bytes(16)], ['visitor', 'session']);
+
+    expect($row)->toHaveKey('visitor')
+        ->and($row)->not->toHaveKey('session');
+});
+
+it('reads a stream resource back as a string', function (): void {
+    $stream = fopen('php://memory', 'r+b');
+
+    if ($stream === false) {
+        throw new RuntimeException('Could not open an in-memory stream.');
+    }
+
+    fwrite($stream, "raw\x00bytes");
+    rewind($stream);
+
+    expect(Binary::read($stream))->toBe("raw\x00bytes");
+
+    fclose($stream);
+});
+
 it('reads a binary column back identically on every engine', function (): void {
     $visitor = "\x00\xff\x01\xfe".random_bytes(12);
 

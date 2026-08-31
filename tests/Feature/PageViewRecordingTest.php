@@ -7,11 +7,13 @@ use Divoto\Cairn\Enums\Channel;
 use Divoto\Cairn\Enums\DeviceType;
 use Divoto\Cairn\Enums\OperatingSystem;
 use Divoto\Cairn\Facades\Cairn;
+use Divoto\Cairn\Http\Middleware\TrackPageView;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
@@ -233,6 +235,12 @@ it('classifies a social referrer as social', function (): void {
     browse('/pricing', ['Referer' => 'https://mastodon.social/@someone/1']);
 
     expect(entries()->value('channel'))->toBe(Channel::Social->value);
+});
+
+it('classifies a referrer that is neither search nor social as a plain referral', function (): void {
+    browse('/pricing', ['Referer' => 'https://news.example.com/some-article']);
+
+    expect(entries()->value('channel'))->toBe(Channel::Referral->value);
 });
 
 /**
@@ -477,4 +485,35 @@ it('serves the response normally when Cairn storage is gone', function (): void 
     Schema::connection(Tables::connection())->drop(Tables::entries());
 
     browse('/pricing')->assertOk()->assertSee('ok');
+});
+
+/**
+ * Ingest, storage, counting and maintenance each swallow their own failures
+ * — proven above. SessionResolver does not, on the theory that a broken
+ * session is worth surfacing to the log. Its failure still must not become
+ * the host application's, which is what this asserts: the middleware's own
+ * outer guard, not any inner one.
+ */
+it('serves the response normally when the session cannot be resolved', function (): void {
+    Schema::connection(Tables::connection())->drop(Tables::sessions());
+
+    browse('/pricing')->assertOk()->assertSee('ok');
+});
+
+/**
+ * handle() is what starts the timer; nothing guarantees terminate() only
+ * ever runs after it on every host application's middleware stack. A
+ * pageview recorded without a start time reports no duration rather than a
+ * negative or nonsensical one.
+ */
+it('records no duration when terminate runs without handle', function (): void {
+    $request = Request::create('/pricing');
+    $request->headers->set(
+        'User-Agent',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    );
+
+    app(TrackPageView::class)->terminate($request, new Response('ok'));
+
+    expect(entries()->value('duration_ms'))->toBeNull();
 });

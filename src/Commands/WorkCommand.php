@@ -98,9 +98,13 @@ final class WorkCommand extends Command
      */
     private function listenForShutdown(): void
     {
+        // @codeCoverageIgnoreStart
+        // ext-pcntl ships in every environment this package's test suite runs
+        // in, so the branch guarding its absence has no path a test can reach.
         if (! function_exists('pcntl_signal') || ! function_exists('pcntl_async_signals')) {
             return;
         }
+        // @codeCoverageIgnoreEnd
 
         pcntl_async_signals(true);
 

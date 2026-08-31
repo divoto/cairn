@@ -19,6 +19,7 @@ use Divoto\Cairn\Integrations\Pulse\LiveVisitors as PulseLiveVisitors;
 use Divoto\Cairn\Integrations\Pulse\TopRoutes as PulseTopRoutes;
 use Divoto\Cairn\Widgets\Filters;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Illuminate\Config\Repository;
 use Illuminate\Contracts\View\Factory as ViewFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
@@ -193,6 +194,25 @@ it('registers nothing when Cairn is disabled', function (): void {
     config()->set('cairn.enabled', false);
 
     expect(fn () => app(Integrations::class)->register())->not->toThrow(Throwable::class);
+});
+
+/**
+ * A broken integration must not stop Cairn recording, which is the part
+ * that matters.
+ */
+it('contains a failure while registering an integration', function (): void {
+    $config = new class(['cairn' => ['enabled' => true]]) extends Repository
+    {
+        /**
+         * @param  array<array-key, mixed>|string  $key
+         */
+        public function get($key, $default = null): mixed
+        {
+            return $key === 'cairn.enabled' ? true : throw new RuntimeException('config unavailable');
+        }
+    };
+
+    expect(fn () => (new Integrations($config))->register())->not->toThrow(Throwable::class);
 });
 
 /*
@@ -499,4 +519,44 @@ it('reads live visitors through Cairn rather than Pulse', function (): void {
     app(Presence::class)->touch(random_bytes(16), '/pricing');
 
     expect(app(Cairn::class)->live())->toBe(1);
+});
+
+it('renders the live-visitors card end to end', function (): void {
+    app(Presence::class)->touch(random_bytes(16), '/pricing');
+
+    $html = (new PulseLiveVisitors)->render()->render();
+
+    expect($html)->toContain('Live visitors')
+        ->toContain('1');
+});
+
+it('renders the top-routes card end to end', function (): void {
+    seedForIntegrations();
+
+    $html = (new PulseTopRoutes)->render()->render();
+
+    expect($html)->toContain('Top routes')
+        ->toContain('pricing.index');
+});
+
+/**
+ * The report builder is not expected to fail, but a Pulse card renders inside
+ * someone else's dashboard — an exception there must not take that page down.
+ * The card reports the error and shows an empty list instead.
+ */
+it('falls back to an empty list when the report throws while rendering top routes', function (): void {
+    $failing = new class
+    {
+        public function report(): never
+        {
+            throw new RuntimeException('report unavailable');
+        }
+    };
+
+    app()->instance(Cairn::class, $failing);
+
+    $html = (new PulseTopRoutes)->render()->render();
+
+    expect($html)->toContain('Top routes');
+    expect($html)->not->toContain('pricing.index');
 });

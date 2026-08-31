@@ -88,6 +88,20 @@ it('tolerates surrounding whitespace', function (): void {
 |
 */
 
+/**
+ * anonymise() only reaches maskIpv6() after filter_var() has already accepted
+ * the address as valid IPv6, so this exercises the method's own fallback
+ * directly rather than trying to find a string that fools one validator but
+ * not the other.
+ */
+it('returns the address unchanged if it cannot be packed as IPv6', function (): void {
+    $anonymiser = anonymiser();
+
+    $method = new ReflectionMethod($anonymiser, 'maskIpv6');
+
+    expect($method->invoke($anonymiser, 'not-an-ip'))->toBe('not-an-ip');
+});
+
 it('recognises addresses a geo lookup could answer', function (): void {
     expect(anonymiser()->isRoutable('8.8.8.8'))->toBeTrue()
         ->and(anonymiser()->isRoutable('203.0.113.7'))->toBeTrue();

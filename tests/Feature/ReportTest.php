@@ -519,6 +519,11 @@ it('refuses to group by a dimension that is not rolled up', function (Dimension 
     'screen class' => [Dimension::ScreenClass],
 ]);
 
+it('refuses to filter by a dimension that is not rolled up', function (): void {
+    expect(fn (): Collection => aReport()->filter(Dimension::Url, '/pricing')->get())
+        ->toThrow(UnavailableDimensionException::class, Dimension::Url->value);
+});
+
 it('refuses to combine two dimensions', function (): void {
     expect(fn (): Collection => aReport()->groupBy(Dimension::Route)->filter(Dimension::Country, 'GB')->get())
         ->toThrow(UnavailableDimensionException::class, 'single-dimension rollups only');

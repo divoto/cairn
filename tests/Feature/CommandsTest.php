@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use Carbon\CarbonImmutable;
+use Divoto\Cairn\Commands\WorkCommand;
 use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Geo\MaxMindGeoResolver;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Maintenance\Doctor;
 use Divoto\Cairn\Maintenance\Finding;
+use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -83,6 +85,42 @@ it('stops immediately when the queue is empty and sleep is zero', function (): v
     app()->forgetInstance(Ingest::class);
 
     expect(Artisan::call('cairn:work', ['--sleep' => 0]))->toBe(0);
+});
+
+/**
+ * A backlog drains at full speed; the worker only pauses once there is
+ * nothing left to do, and only for as long as configured.
+ */
+it('sleeps when the queue is empty before checking it again', function (): void {
+    Redis::connection()->flushdb();
+
+    config()->set('cairn.driver', 'redis');
+    app()->forgetInstance(Ingest::class);
+
+    $start = microtime(true);
+
+    // The first empty batch does not reach the batch limit, so it sleeps
+    // before the second (also empty) batch stops the command.
+    expect(Artisan::call('cairn:work', ['--max-batches' => 2, '--sleep' => 1]))->toBe(0);
+    expect(microtime(true) - $start)->toBeGreaterThanOrEqual(1.0);
+});
+
+it('marks itself to stop when it receives a shutdown signal', function (): void {
+    if (! function_exists('pcntl_signal') || ! function_exists('posix_kill')) {
+        $this->markTestSkipped('pcntl and posix are required for this test.');
+    }
+
+    $command = new WorkCommand;
+
+    $listen = new ReflectionMethod($command, 'listenForShutdown');
+    $listen->invoke($command);
+
+    posix_kill(posix_getpid(), SIGTERM);
+    pcntl_signal_dispatch();
+
+    $shouldStop = new ReflectionProperty($command, 'shouldStop');
+
+    expect($shouldStop->getValue($command))->toBeTrue();
 });
 
 /**
@@ -207,6 +245,25 @@ it('reports a gate that denies in production', function (): void {
     expect(findingTitles())->not->toContain('reachable without authentication');
 });
 
+it('reports nothing about the gate when checking it fails', function (): void {
+    quietDoctor();
+
+    app()->detectEnvironment(fn (): string => 'production');
+    Gate::define('viewCairn', function (mixed $user = null): bool {
+        throw new RuntimeException('gate check failed');
+    });
+
+    expect(fn (): string => findingTitles())->not->toThrow(Throwable::class);
+    expect(findingTitles())->not->toContain('reachable without authentication');
+});
+
+it('reports pageviews grouped by URL path', function (): void {
+    quietDoctor();
+    config()->set('cairn.recorders.'.PageViews::class.'.group_by', 'path');
+
+    expect(findingTitles())->toContain('grouped by URL path');
+});
+
 it('reports raw entries kept forever', function (): void {
     quietDoctor();
     config()->set('cairn.retention.entries');
@@ -228,6 +285,16 @@ it('reports nothing about Redis on the database driver', function (): void {
     quietDoctor();
 
     config()->set('cairn.driver', 'database');
+    config()->set('queue.connections.redis.connection', 'default');
+
+    expect(findingTitles())->not->toContain('shares a Redis connection');
+});
+
+it('reports nothing about Redis when the two connections genuinely differ', function (): void {
+    quietDoctor();
+
+    config()->set('cairn.driver', 'redis');
+    config()->set('cairn.redis.connection', 'cairn');
     config()->set('queue.connections.redis.connection', 'default');
 
     expect(findingTitles())->not->toContain('shares a Redis connection');
@@ -261,6 +328,27 @@ it('reports nothing about geo when no database is configured at all', function (
     expect(findingTitles())->not->toContain('MaxMind');
 });
 
+/**
+ * Distinguishes two quiet failures with the same title: a path that was
+ * never set, and a path that was set but points at nothing readable — the
+ * message above names the setting, this one says there is nothing to name.
+ */
+it('explains that no path is configured at all, rather than naming a missing file', function (): void {
+    quietDoctor();
+
+    config()->set('cairn.privacy.geo_resolver', MaxMindGeoResolver::class);
+    config()->set('cairn.privacy.geo_database');
+
+    $finding = collect(app(Doctor::class)->examine())
+        ->first(fn (Finding $f): bool => str_contains($f->title, 'MaxMind database'));
+
+    if ($finding === null) {
+        throw new RuntimeException('Expected a finding about the MaxMind database.');
+    }
+
+    expect($finding->implication)->toContain('privacy.geo_database is not set');
+});
+
 it('reports region-level geo as well as city', function (): void {
     quietDoctor();
     config()->set('cairn.privacy.geo_precision', 'region');
@@ -281,6 +369,14 @@ it('reports a file cache as well as a database one', function (): void {
     config()->set('cache.stores.file.driver', 'file');
 
     expect(findingTitles())->toContain('stored on disk');
+});
+
+it('reports nothing about the salt store when no cache store can be determined at all', function (): void {
+    quietDoctor();
+    config()->set('cairn.cache_store');
+    config()->set('cache.default');
+
+    expect(findingTitles())->not->toContain('stored on disk');
 });
 
 it('marks a severe finding as severe and an ordinary one as not', function (): void {

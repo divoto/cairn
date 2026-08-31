@@ -56,6 +56,26 @@ it('continues an existing session within the inactivity window', function (): vo
         ->and($second->pageCount)->toBe(1);
 });
 
+/**
+ * SQLite gives a `datetime` column numeric affinity rather than enforcing a
+ * string: a plain integer written into it is stored, and read back, as one.
+ * This is what that looks like arriving from the database, however it got
+ * there — treated as no open session rather than trusted half-parsed.
+ */
+it('treats an existing session as absent if its timestamp did not come back as a string', function (): void {
+    $visitor = random_bytes(16);
+    $start = CarbonImmutable::parse('2026-03-14 12:00:00', 'UTC');
+
+    $first = sessions()->resolve($visitor, $start);
+    sessions()->record($first, $start, '/one');
+
+    sessionRows()->update(['started_at' => 20260314120000]);
+
+    $second = sessions()->resolve($visitor, $start->addMinutes(5));
+
+    expect($second->isNew)->toBeTrue();
+});
+
 it('starts a new session once the inactivity window has passed', function (): void {
     $visitor = random_bytes(16);
     $start = CarbonImmutable::parse('2026-03-14 12:00:00', 'UTC');

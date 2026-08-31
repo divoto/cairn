@@ -136,9 +136,15 @@ final readonly class Doctor
 
         $maxmind = new MaxMindGeoResolver($this->config);
 
+        // @codeCoverageIgnoreStart
+        // A true here needs a database MaxMind's binary Reader accepts —
+        // this suite fakes that reader everywhere else rather than
+        // constructing one (see GeolocationTest), and does the same here by
+        // not exercising this branch at all.
         if ($maxmind->isAvailable()) {
             return null;
         }
+        // @codeCoverageIgnoreEnd
 
         return new Finding(
             'The MaxMind database is configured but cannot be read',

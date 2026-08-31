@@ -188,9 +188,14 @@ final class GeoipCommand extends Command
     {
         $notes = [];
 
+        // @codeCoverageIgnoreStart
+        // geoip2/geoip2 is a dev dependency of this package, so it is always
+        // installed wherever this suite runs — there is no test environment
+        // in which the branch this guards is the one taken.
         if (! class_exists(Reader::class)) {
             $notes[] = 'Install the reader: <options=bold>composer require geoip2/geoip2</>';
         }
+        // @codeCoverageIgnoreEnd
 
         if ($config->get('cairn.privacy.geo_resolver') !== MaxMindGeoResolver::class) {
             $notes[] = 'Point Cairn at it: set <options=bold>privacy.geo_resolver</> to '

@@ -6,11 +6,13 @@ use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Support\Beacon;
 use Divoto\Cairn\Support\Tables;
+use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -191,6 +193,58 @@ it('accepts only the first submission for a pageview', function (): void {
     postBeacon(['url' => '/pricing', 'seconds' => 9999, 'scroll' => 10])->assertNoContent();
 
     expect(beaconEntries()->value('time_on_page'))->toBe(42);
+});
+
+it('rejects measurements once Cairn is disabled', function (): void {
+    recordPageview();
+
+    config()->set('cairn.enabled', false);
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42])->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+/**
+ * The window that actually stops a replay is the entry's own
+ * `time_on_page` staying null — asserted above. This is the second guard,
+ * for the case that gap is meant to cover: two submissions for the same
+ * pageview arriving close enough together that neither has updated the row
+ * yet. Simulated directly on the cache key rather than with real
+ * concurrency, which a single-threaded test cannot produce.
+ */
+it('rejects a submission already recorded as collected, even before the entry is marked measured', function (): void {
+    recordPageview();
+
+    $row = (array) beaconEntries()->first();
+    $visitor = binaryValue($row['visitor'] ?? '');
+
+    app(Cache::class)->put('cairn:collected:'.bin2hex($visitor).':'.$row['id'], 1, 3600);
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42])->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+it('rejects a submission once the visitor has exceeded the rate limit', function (): void {
+    recordPageview();
+
+    $visitor = binaryValue(beaconEntries()->value('visitor'));
+    $key = 'cairn:collect-rate:'.bin2hex($visitor).':'.now('UTC')->format('YmdHi');
+
+    app(Cache::class)->put($key, 60, 120);
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42])->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+it('answers 204 even when collecting the measurement throws', function (): void {
+    recordPageview();
+
+    Schema::connection(Tables::connection())->dropIfExists(Tables::entries());
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42])->assertNoContent();
 });
 
 it('rejects a malformed payload', function (array $payload): void {

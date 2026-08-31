@@ -313,9 +313,12 @@ final readonly class DatabaseStorage implements Storage
             $data = (array) $row;
             $value = $data[$column] ?? null;
 
+            // @codeCoverageIgnoreStart
+            // whereNotNull() above already excludes this at the SQL level.
             if ($value === null) {
                 continue;
             }
+            // @codeCoverageIgnoreEnd
 
             $measurements = $this->readMeasurements($data);
 

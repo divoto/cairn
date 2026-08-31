@@ -226,6 +226,18 @@ it('accepts a closure as an ignore rule', function (): void {
         ->toBeNull();
 });
 
+it('skips an ignore rule that is neither a closure nor a string', function (): void {
+    config()->set('cairn.recorders.'.PageViews::class.'.ignore', [
+        42,
+        '/pricing',
+    ]);
+
+    expect(gate()->decide(requestWith(uri: '/pricing'), recorder: PageViews::class))
+        ->toBe(DeclineReason::Ignored)
+        ->and(gate()->decide(requestWith(uri: '/checkout'), recorder: PageViews::class))
+        ->toBeNull();
+});
+
 /*
 |--------------------------------------------------------------------------
 | Sampling

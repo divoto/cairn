@@ -125,9 +125,14 @@ final readonly class CollectController
     {
         $data = $request->json()->all();
 
+        // @codeCoverageIgnoreStart
+        // Request::json() casts the decoded body to an array before this ever
+        // sees it — (array) on a scalar or null still produces an array — so
+        // there is no input that reaches here as anything else.
         if (! is_array($data)) {
             return null;
         }
+        // @codeCoverageIgnoreEnd
 
         $url = $data['url'] ?? null;
 

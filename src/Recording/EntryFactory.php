@@ -175,9 +175,14 @@ final readonly class EntryFactory
 
         $masked = $this->anonymiser->anonymise($ip);
 
+        // @codeCoverageIgnoreStart
+        // isRoutable() above already ran the same $ip through FILTER_VALIDATE_IP
+        // — with extra range exclusions, not a looser format check — so
+        // anything that passed it necessarily parses here too.
         if ($masked === null) {
             return GeoLocation::unknown();
         }
+        // @codeCoverageIgnoreEnd
 
         return ($this->geo->resolve($masked) ?? GeoLocation::unknown())->reduceTo($precision);
     }

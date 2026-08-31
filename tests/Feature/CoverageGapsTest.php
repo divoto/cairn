@@ -14,7 +14,9 @@ use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\OperatingSystem;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Ingest\DatabaseIngest;
+use Divoto\Cairn\Presence\DatabasePresence;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recording\EntryFactory;
 use Divoto\Cairn\Reporting\Report;
@@ -34,6 +36,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Foundation\Auth\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 uses(RefreshDatabase::class);
 
@@ -314,6 +317,20 @@ it('falls back to country precision for an unrecognised setting', function (): v
 });
 
 /**
+ * A loopback or private address is skipped before the resolver is ever
+ * asked — {@see IpAnonymiserTest} — so a lookup that actually reaches the
+ * resolver needs a genuinely public one. The default resolver answers
+ * nothing, so this is also the shape a real deployment's non-answer takes.
+ */
+it('masks and resolves a routable address rather than skipping the lookup', function (): void {
+    $entry = app(EntryFactory::class)->pageview(
+        Request::create('/pricing', 'GET', server: ['REMOTE_ADDR' => '8.8.8.8'])
+    );
+
+    expect($entry->country)->toBeNull();
+});
+
+/**
  * Only the first tag, and only eight characters. A full Accept-Language header
  * is a fingerprinting signal in its own right.
  */
@@ -367,6 +384,20 @@ it('prefers published assets over the packaged ones', function (): void {
         ->and(Beacon::tag())->toContain('window.published=1;');
 
     unlink($directory.'/cairn.css');
+    unlink($directory.'/cairn.min.js');
+});
+
+it('renders no tag when the published script exists but is empty', function (): void {
+    $directory = public_path('vendor/cairn');
+
+    if (! is_dir($directory)) {
+        mkdir($directory, 0o755, true);
+    }
+
+    file_put_contents($directory.'/cairn.min.js', '');
+
+    expect(Beacon::tag())->toBe('');
+
     unlink($directory.'/cairn.min.js');
 });
 
@@ -451,4 +482,24 @@ it('scopes a rollup and a report to a tenant', function (): void {
 
     expect(columnFloat($rows['acme'] ?? null))->toBe(3.0)
         ->and(columnFloat($rows['globex'] ?? null))->toBe(1.0);
+});
+
+it('reads the opt-out cookie from the current request when none is given', function (): void {
+    app()->instance('request', Request::create('/', cookies: ['cairn_opt_out' => '1']));
+
+    expect(app(Cairn::class)->hasOptedOut())->toBeTrue();
+});
+
+it('exposes the session resolver for callers that need to close or inspect a visit', function (): void {
+    expect(app(Cairn::class)->sessions())->toBe(app(SessionResolver::class));
+});
+
+it('reports its own presence window in minutes', function (): void {
+    expect(app(DatabasePresence::class)->windowMinutes())->toBe(5);
+});
+
+it('does nothing when asked to store an empty collection', function (): void {
+    expect(function (): void {
+        app(Storage::class)->store(new Collection);
+    })->not->toThrow(Throwable::class);
 });

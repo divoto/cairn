@@ -88,6 +88,10 @@ it('passes through an integer with no matching case', function (): void {
     expect(Dimension::Browser->display('9999'))->toBe('9999');
 });
 
+it('passes a numeric-looking value through unchanged on a dimension with no lookup at all', function (): void {
+    expect(Dimension::Route->display('42'))->toBe('42');
+});
+
 it('flags the one dimension that needs the beacon', function (): void {
     expect(Dimension::ScreenClass->requiresBeacon())->toBeTrue()
         ->and(Dimension::Route->requiresBeacon())->toBeFalse();
@@ -255,6 +259,14 @@ it('classifies a user agent', function (string $agent, DeviceType $type, Browser
     'internet explorer' => [
         'Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko',
         DeviceType::Desktop, Browser::InternetExplorer, OperatingSystem::Windows,
+    ],
+    'a kindle, which mentions neither ipad nor android' => [
+        'Mozilla/5.0 (Linux; U; en-us; KFTT Build/IML74K) AppleWebKit/535.19 (KHTML, like Gecko) Silk/3.13 Safari/535.19',
+        DeviceType::Tablet, Browser::Safari, OperatingSystem::Linux,
+    ],
+    'an apple watch' => [
+        'Mozilla/5.0 (Apple Watch; CPU WatchOS 9_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/9.0 Mobile/15E148 Safari/604.1',
+        DeviceType::Wearable, Browser::Safari, OperatingSystem::MacOS,
     ],
 ]);
 

@@ -197,6 +197,15 @@ it('reads the grouping from config, defaulting to route names', function (): voi
         ->and(RouteGrouping::fromConfig(['path']))->toBe(RouteGrouping::Name);
 });
 
+it('describes what the routes table is showing for each strategy', function (RouteGrouping $grouping): void {
+    expect($grouping->description())->toBeString();
+    expect($grouping->description())->not->toBe('');
+})->with([
+    'name' => [RouteGrouping::Name],
+    'uri' => [RouteGrouping::Uri],
+    'path' => [RouteGrouping::Path],
+]);
+
 /*
 |--------------------------------------------------------------------------
 | ChannelClassifier
@@ -330,6 +339,21 @@ it('drops nested structures from custom properties', function (): void {
     $restored = EntryMapper::deserialise(EntryMapper::serialise($entry));
 
     expect($restored?->properties)->toBe(['plan' => 'pro', 'seats' => 5, 'ok' => true]);
+});
+
+it('round-trips a session hash alongside the visitor hash', function (): void {
+    $session = random_bytes(16);
+
+    $entry = new Entry(
+        occurredAt: now()->toImmutable()->startOfSecond(),
+        type: EntryType::Pageview,
+        visitor: random_bytes(16),
+        session: $session,
+    );
+
+    $restored = EntryMapper::deserialise(EntryMapper::serialise($entry));
+
+    expect($restored?->session)->toBe($session);
 });
 
 it('round-trips an entry with nothing but the essentials', function (): void {

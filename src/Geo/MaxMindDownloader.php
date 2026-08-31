@@ -275,10 +275,15 @@ final readonly class MaxMindDownloader
         string $sink,
         ?Closure $onProgress,
     ): void {
+        // @codeCoverageIgnoreStart
+        // Every supported PHP build in this package's test matrix ships
+        // ext-curl, and curl_init() does not fail for a well-formed URL — both
+        // guards are real, but neither is reachable from a test.
         if (! function_exists('curl_init')) {
             throw Failed::unreachable('ext-curl is not installed. Download the database manually instead — '
                 .'see documentation/geolocation.md.');
         }
+        // @codeCoverageIgnoreEnd
 
         $handle = @fopen($sink, 'wb');
 
@@ -288,11 +293,13 @@ final readonly class MaxMindDownloader
 
         $curl = curl_init($url);
 
+        // @codeCoverageIgnoreStart
         if ($curl === false) {
             fclose($handle);
 
             throw Failed::unreachable('curl could not be initialised.');
         }
+        // @codeCoverageIgnoreEnd
 
         curl_setopt_array($curl, [
             CURLOPT_FILE => $handle,
