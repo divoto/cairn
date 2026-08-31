@@ -12,7 +12,7 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
-## [Unreleased]
+## [1.1.0] - 2026-08-31
 
 ### Fixed
 
@@ -40,6 +40,8 @@ release.
   throw `UnavailableDimensionException` like every other unmaterialised
   combination, rather than silently honouring one.
 
+### Changed
+
 - **A filter now replaces the previous one rather than stacking.** Selecting a
   country while a route was selected produced a URL naming both, describing an
   intersection that was never rolled up. Dimension filters are one at a time,
@@ -47,8 +49,19 @@ release.
   the first rather than half-honoured, and links written back carry only the
   filter that was applied.
 
-  No data, schema or rollup changes — the fixes are all on the read path, and
-  existing `cairn_aggregates` rows are read as they stand.
+- **A narrowed report omits metrics it cannot measure, where it used to report
+  zero.** `ReportRow::metric()` returns `null` for sessions, bounce rate and —
+  outside a route filter — unique visitors, so `toArray()` and the CSV export
+  drop those columns for a filtered report rather than carrying a `0` that was
+  never measured. Unfiltered reports are unchanged.
+
+### Upgrading
+
+No data, schema or rollup changes. Every fix is on the read path, existing
+`cairn_aggregates` rows are read as they stand, and there is no migration to
+run. Two things to know: a dashboard URL naming two dimension filters now
+honours the first rather than both, and a filtered report omits the metrics
+listed above instead of reporting them as zero.
 
 ## [1.0.0] - 2026-08-09
 
