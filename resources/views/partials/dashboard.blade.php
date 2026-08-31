@@ -33,7 +33,7 @@
                     // different filters.
                     $enum = Divoto\Cairn\Enums\Dimension::tryFrom($dimension);
                 @endphp
-                <a class="chip" href="{{ $query([$dimension => null]) }}"
+                <a class="chip" href="{{ url($path).'?'.http_build_query($filters->with($dimension, null)->toQuery()) }}"
                    aria-label="Remove the {{ $dimension }} filter">
                     <b>{{ $dimension }}</b> {{ $enum?->display($value) ?? $value }} <span aria-hidden="true">✕</span>
                 </a>
@@ -71,6 +71,14 @@
                 <h2 id="w-{{ $widget->key() }}">{{ $widget->title() }}</h2>
                 @if ($widget->description())
                     <p class="panel-note">{{ $widget->description() }}</p>
+                @endif
+
+                {{-- A table grouped by one dimension cannot also be narrowed
+                     by another — v1 rolls up one dimension at a time — so a
+                     panel that is still site-wide says so rather than letting
+                     the filter above it imply otherwise. --}}
+                @if ($filters->isFiltered() && $schema->dimension !== $filters->dimension())
+                    <p class="panel-note unfiltered">Site-wide — not narrowed by the {{ $filters->dimension() }} filter.</p>
                 @endif
             </div>
 

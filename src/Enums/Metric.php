@@ -133,6 +133,40 @@ enum Metric: string
     }
 
     /**
+     * Whether this metric exists inside a single-dimension rollup.
+     *
+     * Entry-derived quantities are measured again for every materialised
+     * dimension, so pageviews-in-Singapore is a number that was actually
+     * recorded. Session-derived ones are not: sessions are measured from
+     * `cairn_sessions`, which carries no dimension columns, so they exist only
+     * in the site-wide "overall" rollup. Unique visitors are the same story
+     * from the other direction — the counter is keyed per day and per route,
+     * and nothing else.
+     *
+     * A report narrowed to one dimension value therefore reports the metrics
+     * that were measured at that grain and omits the rest, rather than
+     * printing the site-wide figure beside a filter it does not honour, or a
+     * zero that reads as "none".
+     *
+     * A derived metric survives only if both of its components do — there is
+     * no bounce rate for a country while its session count does not exist.
+     */
+    public function isMeasuredPerDimension(): bool
+    {
+        $ratio = $this->ratio();
+
+        if ($ratio !== null) {
+            return $ratio['numerator']->isMeasuredPerDimension()
+                && $ratio['denominator']->isMeasuredPerDimension();
+        }
+
+        return match ($this) {
+            self::Sessions, self::Bounces, self::SessionSeconds, self::Visitors => false,
+            default => $this->isStored(),
+        };
+    }
+
+    /**
      * Whether values of this metric are only measurable with the JS beacon.
      *
      * Widgets built on these render an explanatory empty state when the beacon

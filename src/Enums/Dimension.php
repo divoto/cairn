@@ -92,6 +92,20 @@ enum Dimension: string
     }
 
     /**
+     * Whether unique visitors are counted for each value of this dimension.
+     *
+     * A set cardinality cannot be summed out of a rollup after the fact, so
+     * uniques are counted as traffic arrives, against keys chosen in advance.
+     * The recorder writes one key site-wide and one per route, and nothing
+     * else — so "visitors from Singapore" is not a number that exists, while
+     * "visitors on the pricing page" is.
+     */
+    public function countsVisitors(): bool
+    {
+        return $this === self::Route;
+    }
+
+    /**
      * Whether values of this dimension are only present with the JS beacon.
      */
     public function requiresBeacon(): bool

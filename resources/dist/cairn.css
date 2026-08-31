@@ -266,6 +266,13 @@ a { color: inherit; }
     color: var(--ink-faint);
 }
 
+/* A panel the active filter does not reach. Quiet, but not invisible: the
+   point is that its numbers are site-wide while a filter chip is showing. */
+.panel-note.unfiltered {
+    font-style: italic;
+    opacity: 0.85;
+}
+
 .panel-head { margin-bottom: 14px; }
 
 /* Headline numbers ----------------------------------------------------- */

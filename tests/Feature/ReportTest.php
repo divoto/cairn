@@ -529,6 +529,113 @@ it('refuses to combine two dimensions', function (): void {
         ->toThrow(UnavailableDimensionException::class, 'single-dimension rollups only');
 });
 
+/*
+|--------------------------------------------------------------------------
+| Narrowing without grouping
+|--------------------------------------------------------------------------
+|
+| "How much traffic came from Germany" is answerable: the country rollup holds
+| it, and collapsing that rollup to a single total is exactly the question.
+| The builder used to read the dimensionless "overall" rows instead, filter
+| every one of them out, and report zero — a plausible number and a wrong one.
+|
+*/
+
+it('totals a metric narrowed to one dimension value', function (): void {
+    seedDataset();
+
+    // Three of the five pageviews came from GB and two from DE. The fourth
+    // GB entry is the conversion, which is not a pageview.
+    expect(aReport()->metrics(Metric::Pageviews)->filter(Dimension::Country, 'GB')->total()->metric(Metric::Pageviews))
+        ->toBe(3.0)
+        ->and(aReport()->metrics(Metric::Pageviews)->filter(Dimension::Country, 'DE')->total()->metric(Metric::Pageviews))
+        ->toBe(2.0);
+});
+
+it('narrows a timeseries to one dimension value', function (): void {
+    seedDataset();
+
+    $series = aReport()
+        ->metrics(Metric::Pageviews)
+        ->filter(Dimension::Route, 'pricing.index')
+        ->interval(Period::Day)
+        ->timeseries();
+
+    // pricing.index: two pageviews on the 14th, one on the 15th.
+    expect($series->map(fn (ReportRow $row): ?float => $row->metric(Metric::Pageviews))->all())
+        ->toBe([2.0, 1.0]);
+});
+
+/**
+ * Sessions are measured from `cairn_sessions`, which has no dimension
+ * columns, so no per-country session count was ever written. The metric is
+ * omitted — a zero here would read as "Germany sent no sessions", which is a
+ * claim about traffic rather than about what was measured.
+ */
+it('omits the metrics a single-dimension rollup never measured', function (): void {
+    seedDataset();
+
+    $row = aReport()
+        ->metrics(Metric::Pageviews, Metric::Sessions, Metric::Visitors, Metric::BounceRate)
+        ->filter(Dimension::Country, 'GB')
+        ->total();
+
+    expect($row->metric(Metric::Pageviews))->toBe(3.0)
+        ->and($row->metric(Metric::Sessions))->toBeNull()
+        ->and($row->metric(Metric::Visitors))->toBeNull()
+        ->and($row->metric(Metric::BounceRate))->toBeNull()
+        // Approximation is a warning about summed daily visitor counts, and
+        // there is no visitor count here to warn about.
+        ->and($row->approximate)->toBeFalse();
+});
+
+/**
+ * Uniques cannot be summed out of a rollup, so they are counted as traffic
+ * arrives against keys chosen in advance — one site-wide and one per route.
+ * That makes "visitors on the pricing page" a real number and "visitors from
+ * Germany" one that was never counted, and the builder reports accordingly
+ * rather than treating every narrowing the same.
+ */
+it('reports unique visitors for a route it narrows to, but not for a country', function (): void {
+    seedDataset();
+
+    app(UniqueCounter::class)->add('2026-03-14', 'route:pricing.index', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-14', 'route:pricing.index', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-14', 'route:home.index', random_bytes(16));
+
+    $byRoute = aReport()
+        ->metrics(Metric::Visitors)
+        ->filter(Dimension::Route, 'pricing.index')
+        ->total();
+
+    expect($byRoute->metric(Metric::Visitors))->toBe(2.0)
+        ->and(
+            aReport()->metrics(Metric::Visitors)->filter(Dimension::Country, 'GB')
+                ->total()->metric(Metric::Visitors)
+        )->toBeNull();
+});
+
+it('keeps reporting site-wide sessions when nothing is narrowed', function (): void {
+    seedDataset();
+
+    expect(aReport()->metrics(Metric::Pageviews, Metric::Sessions)->total()->metric(Metric::Sessions))
+        ->not->toBeNull();
+});
+
+/**
+ * Two filters and no grouping asks for the same unmaterialised pair as
+ * grouping by one and filtering by another, so it is refused the same way
+ * rather than answered with whichever half happens to be applied first.
+ */
+it('refuses to narrow by two dimensions at once', function (): void {
+    expect(fn (): ReportRow => aReport()
+        ->metrics(Metric::Pageviews)
+        ->filter(Dimension::Country, 'GB')
+        ->filter(Dimension::Route, 'pricing.index')
+        ->total())
+        ->toThrow(UnavailableDimensionException::class, 'single-dimension rollups only');
+});
+
 it('refuses unique visitors at a grouping they are not counted for', function (): void {
     expect(fn (): Collection => aReport()->metrics(Metric::Visitors)->groupBy(Dimension::Country)->get())
         ->toThrow(UnavailableDimensionException::class, 'visitors');

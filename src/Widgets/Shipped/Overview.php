@@ -34,7 +34,8 @@ final class Overview extends Widget
 
     public function query(Filters $filters): Report
     {
-        return $this->report($filters)->metrics(...$this->metrics());
+        return $this->applyActiveFilter($this->report($filters), $filters)
+            ->metrics(...$this->metrics());
     }
 
     public function schema(): WidgetSchema
@@ -69,7 +70,7 @@ final class Overview extends Widget
     public function series(Filters $filters): Collection
     {
         try {
-            return $this->report($filters)
+            return $this->applyActiveFilter($this->report($filters), $filters)
                 ->metrics(Metric::Pageviews, Metric::Visitors)
                 ->timeseries();
         } catch (Throwable $e) {

@@ -224,12 +224,12 @@ final class Report
                 to: $end,
                 period: $this->interval,
                 metrics: $stored,
-                groupBy: $this->groupBy,
+                groupBy: $this->storageGroupBy(),
                 filters: $this->filters,
                 tenantId: $tenant,
             ));
 
-            $totals = $this->sumMetrics($measured);
+            $totals = $this->sumMetrics($this->applyFilters($measured));
 
             // Visitors are counted per day and cannot be cut finer (see
             // withVisitors). Asking for the visitors in one hour would return
@@ -294,9 +294,12 @@ final class Report
 
         $handle = fopen('php://temp', 'r+');
 
+        // @codeCoverageIgnoreStart
+        // php://temp is a PHP-internal stream; opening it does not fail.
         if ($handle === false) {
             return '';
         }
+        // @codeCoverageIgnoreEnd
 
         fputcsv($handle, [...$dimensions, ...$metrics], escape: '\\');
 
@@ -351,6 +354,15 @@ final class Report
             }
         }
 
+        // Two filters and no grouping is the same missing pair asked a
+        // different way: narrowing to one country and one route describes an
+        // intersection that was never measured.
+        if ($this->groupBy === [] && count($this->filters) > 1) {
+            $dimensions = array_map(Dimension::from(...), array_keys($this->filters));
+
+            throw UnavailableDimensionException::combination($dimensions[0], $dimensions[1]);
+        }
+
         if (in_array(Metric::Visitors, $this->metrics, true) && ! $this->visitorsAvailable()) {
             throw UnavailableDimensionException::metric(Metric::Visitors, $this->groupBy[0] ?? null);
         }
@@ -368,7 +380,7 @@ final class Report
             return true;
         }
 
-        return count($this->groupBy) === 1 && $this->groupBy[0] === Dimension::Route;
+        return count($this->groupBy) === 1 && $this->groupBy[0]->countsVisitors();
     }
 
     /**
@@ -383,7 +395,7 @@ final class Report
             to: Buckets::next(Buckets::align($to, $this->interval), $this->interval),
             period: $this->interval,
             metrics: $this->storedMetrics(),
-            groupBy: $this->groupBy,
+            groupBy: $this->storageGroupBy(),
             filters: $this->filters,
             tenantId: $this->tenants->resolve(),
         ));
@@ -421,11 +433,69 @@ final class Report
     }
 
     /**
+     * The grouping storage must read to answer this report.
+     *
+     * A report that filters without grouping — "how much traffic came from
+     * Singapore" — still needs the country rollup, because the site-wide
+     * "overall" rows carry no dimension to match against. Asking storage for
+     * the ungrouped key and then filtering dimensionless rows in PHP discards
+     * every one of them and reports zero, which is a plausible number and a
+     * wrong one.
+     *
+     * The rows come back per country and are collapsed to a single total by
+     * {@see self::rowsFor()}, since the caller asked for no grouping.
+     *
+     * @return list<Dimension>
+     */
+    private function storageGroupBy(): array
+    {
+        $narrowed = $this->narrowedDimension();
+
+        return $narrowed instanceof Dimension ? [$narrowed] : $this->groupBy;
+    }
+
+    /**
+     * The dimension this report is narrowed to, if it filters without grouping.
+     *
+     * The case that reads a single-dimension rollup and collapses it back to a
+     * total, and therefore the case where some metrics have no figure to give.
+     * {@see self::reports()}
+     */
+    private function narrowedDimension(): ?Dimension
+    {
+        if ($this->groupBy !== [] || $this->filters === []) {
+            return null;
+        }
+
+        return Dimension::from((string) array_key_first($this->filters));
+    }
+
+    /**
+     * Whether this report can put a figure against a metric.
+     *
+     * Narrowed to one dimension value, a metric measured only site-wide has
+     * nothing to report. Unique visitors are the exception worth making: the
+     * counter is written per route as traffic arrives, so one route's visitors
+     * are a real number even though no rollup carries them.
+     */
+    private function reports(Metric $metric): bool
+    {
+        $narrowed = $this->narrowedDimension();
+
+        if (! $narrowed instanceof Dimension || $metric->isMeasuredPerDimension()) {
+            return true;
+        }
+
+        return $metric === Metric::Visitors && $narrowed->countsVisitors();
+    }
+
+    /**
      * Drop rows that do not match the configured filters.
      *
      * Applied here rather than in SQL because a filter can only ever be on the
-     * dimension being grouped by — {@see self::guard()} rejects anything else —
-     * so the set being filtered is already small.
+     * dimension being grouped by, or on the dimension standing in for the
+     * grouping — {@see self::guard()} rejects anything else — so the set being
+     * filtered is already small.
      *
      * @param  Collection<int, ReportRow>  $rows
      * @return Collection<int, ReportRow>
@@ -460,9 +530,13 @@ final class Report
     {
         $window = $this->comparison->windowFor($this->from, $this->to);
 
+        // @codeCoverageIgnoreStart
+        // windowFor() only returns null for Comparison::None, and the only
+        // caller of this method already guards against that case.
         if ($window === null) {
             return $rows;
         }
+        // @codeCoverageIgnoreEnd
 
         $previous = $this->rowsFor($window[0], $window[1])
             ->keyBy(fn (ReportRow $row): string => $this->keyOf($row));
@@ -542,6 +616,20 @@ final class Report
             return $totals;
         }
 
+        $narrowed = $this->narrowedDimension();
+
+        if ($narrowed instanceof Dimension) {
+            // Narrowed to one value, the set to count is that value's own.
+            // Falling through to "overall" would answer with the whole site's
+            // visitors under the filter's heading.
+            if (! $this->reports(Metric::Visitors)) {
+                return $totals;
+            }
+
+            $dimension = $narrowed;
+            $value = $this->filters[$narrowed->value][0] ?? null;
+        }
+
         $key = $dimension instanceof Dimension ? $dimension->value.':'.$value : 'overall';
         $visitors = 0;
 
@@ -569,6 +657,13 @@ final class Report
         $out = [];
 
         foreach ($this->metrics as $metric) {
+            // Omitting renders as an em dash. Defaulting to zero would read as
+            // "no sessions from Singapore", and keeping the unfiltered total
+            // would be the site's number wearing the filter's label.
+            if (! $this->reports($metric)) {
+                continue;
+            }
+
             $ratio = $metric->ratio();
 
             if ($ratio === null) {
@@ -627,7 +722,7 @@ final class Report
      */
     private function isApproximate(CarbonImmutable $from, CarbonImmutable $to): bool
     {
-        if (! in_array(Metric::Visitors, $this->metrics, true)) {
+        if (! in_array(Metric::Visitors, $this->metrics, true) || ! $this->reports(Metric::Visitors)) {
             return false;
         }
 

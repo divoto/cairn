@@ -7,6 +7,7 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Data\Entry;
+use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
@@ -15,6 +16,7 @@ use Divoto\Cairn\Facades\Cairn;
 use Divoto\Cairn\Reporting\Report;
 use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\Filters;
+use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 use Divoto\Cairn\Widgets\Widget;
 use Divoto\Cairn\Widgets\WidgetLayout;
@@ -267,6 +269,132 @@ it('shows a removable chip for an active filter', function (): void {
     cairnTest()->get('/cairn?route=pricing.index')
         ->assertOk()
         ->assertSee('Remove the route filter');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Narrowing to one dimension
+|--------------------------------------------------------------------------
+|
+| Clicking a country used to change nothing but the country panel itself: the
+| chip appeared, the URL carried the value, and every headline number stayed
+| site-wide. The rollup does hold pageviews per country, so the totals and the
+| chart can honour the filter; the session metrics and the visitor count were
+| never measured at that grain and are withheld rather than guessed at.
+|
+*/
+
+it('narrows the headline totals and the chart to the selected country', function (): void {
+    seedTraffic();
+
+    $overview = app(Overview::class);
+    $filters = new Filters(range: 'today', country: 'GB');
+
+    // Three of the five seeded pageviews came from GB.
+    expect($overview->rows($filters)->first()?->metric(Metric::Pageviews))->toBe(3.0)
+        ->and($overview->series($filters)->sum(
+            fn (ReportRow $row): float => $row->metric(Metric::Pageviews) ?? 0.0
+        ))->toBe(3.0);
+});
+
+/**
+ * Sessions live in `cairn_sessions`, which has no dimension columns, so there
+ * is no such number as "sessions from Germany". Reporting the site's figure
+ * under the country's heading, or a zero that reads as "none", would both be
+ * claims the data does not support.
+ */
+it('withholds the metrics that were never measured per country', function (): void {
+    seedTraffic();
+
+    $row = app(Overview::class)->rows(new Filters(range: 'today', country: 'GB'))->first();
+
+    expect($row?->metric(Metric::Pageviews))->toBe(3.0)
+        ->and($row?->metric(Metric::Sessions))->toBeNull()
+        ->and($row?->metric(Metric::Visitors))->toBeNull()
+        ->and($row?->metric(Metric::BounceRate))->toBeNull();
+});
+
+it('renders a withheld metric as an em dash rather than a zero', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn?range=today&country=GB')->assertOk()->getContent());
+
+    // The pageview figure is the country's, and the stats it cannot answer
+    // are blank rather than reading as a measured nothing.
+    expect($html)->toContain('—')
+        ->and($html)->toContain('Remove the country filter');
+});
+
+/**
+ * The panels the filter cannot reach are the ones grouped by another
+ * dimension. They keep showing site-wide numbers — there is no other number
+ * to show — so they say as much rather than letting the chip imply otherwise.
+ */
+it('marks the panels a filter cannot narrow as site-wide', function (): void {
+    seedTraffic();
+
+    $html = asString(cairnTest()->get('/cairn?country=GB')->assertOk()->getContent());
+
+    expect($html)->toContain('not narrowed by the country filter');
+
+    // The countries panel is the one panel the filter does reach.
+    preg_match('/w-countries.*?<\/div>/s', $html, $panel);
+    expect($panel[0] ?? '')->not->toContain('not narrowed by');
+});
+
+/**
+ * Routes and channels are clickable for the same reason countries are, and go
+ * down the same path. A channel value is an int-backed enum, so the link
+ * carries its stored value rather than its label — worth a test, because a
+ * mismatch between what the link writes and what the rollup key holds is
+ * invisible until the numbers come back empty.
+ */
+it('narrows the headline totals for every clickable dimension', function (Filters $filters, float $expected): void {
+    seedTraffic();
+
+    expect(app(Overview::class)->rows($filters)->first()?->metric(Metric::Pageviews))
+        ->toBe($expected);
+})->with([
+    // Of the five seeded pageviews: three from GB, three on pricing.index.
+    'country' => [fn (): Filters => new Filters(range: 'today', country: 'GB'), 3.0],
+    'route' => [fn (): Filters => new Filters(range: 'today', route: 'pricing.index'), 3.0],
+]);
+
+/**
+ * Visitors are counted per route as traffic arrives but never per country, so
+ * the same click on two different panels honestly gives different answers.
+ */
+it('shows a visitor count for a route filter but not for a country', function (): void {
+    seedTraffic();
+
+    $overview = app(Overview::class);
+
+    expect($overview->rows(new Filters(range: 'today', route: 'pricing.index'))
+        ->first()?->metric(Metric::Visitors))->not->toBeNull()
+        ->and($overview->rows(new Filters(range: 'today', country: 'GB'))
+            ->first()?->metric(Metric::Visitors))->toBeNull();
+});
+
+it('replaces the active filter rather than combining two', function (): void {
+    $filters = (new Filters(range: '7d', country: 'GB'))->with('route', 'pricing.index');
+
+    expect($filters->route)->toBe('pricing.index')
+        ->and($filters->country)->toBeNull()
+        ->and($filters->active())->toBe(['route' => 'pricing.index'])
+        ->and($filters->range)->toBe('7d');
+});
+
+/**
+ * A hand-written URL naming two dimensions asks for an intersection that was
+ * never rolled up. One is honoured, and the link the page writes back carries
+ * only that one rather than propagating the ignored half.
+ */
+it('honours one dimension when a URL names two', function (): void {
+    $filters = Filters::fromRequest(Request::create('/cairn?route=pricing.index&country=GB'));
+
+    expect($filters->active())->toBe(['route' => 'pricing.index'])
+        ->and($filters->dimension())->toBe('route')
+        ->and($filters->toQuery())->not->toHaveKey('country');
 });
 
 it('charts a single day by hour and a year by month', function (): void {

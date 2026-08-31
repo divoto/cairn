@@ -117,25 +117,45 @@ final readonly class Filters
     }
 
     /**
-     * Whether any dimension filter is applied.
+     * Whether a dimension filter is applied.
      */
     public function isFiltered(): bool
     {
-        return $this->route !== null || $this->country !== null || $this->channel !== null;
+        return $this->active() !== [];
     }
 
     /**
-     * The active dimension filters, for display as removable chips.
+     * The active dimension filter, for display as a removable chip.
+     *
+     * **At most one.** v1 materialises single-dimension rollups, so "traffic
+     * from Singapore" is a number that was measured and "traffic from
+     * Singapore on the pricing page" is not. Two filters at once would name a
+     * figure nothing can answer, so a hand-written URL carrying both is read
+     * as the first by this precedence rather than half-honoured.
      *
      * @return array<string, string>
      */
     public function active(): array
     {
-        return array_filter([
+        foreach ([
             'route' => $this->route,
             'country' => $this->country,
             'channel' => $this->channel,
-        ], static fn (?string $value): bool => $value !== null);
+        ] as $dimension => $value) {
+            if ($value !== null) {
+                return [$dimension => $value];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * The dimension currently filtered on, if any.
+     */
+    public function dimension(): ?string
+    {
+        return array_key_first($this->active());
     }
 
     /**
@@ -146,13 +166,12 @@ final readonly class Filters
      */
     public function toQuery(array $overrides = []): array
     {
+        // Only the honoured filter is written back, so a link built from a
+        // URL carrying two never propagates the one that was ignored.
         $query = array_merge([
             'range' => $this->range,
             'compare' => $this->comparison->value,
-            'route' => $this->route,
-            'country' => $this->country,
-            'channel' => $this->channel,
-        ], $overrides);
+        ], $this->active(), $overrides);
 
         return array_filter(
             $query,
@@ -161,16 +180,20 @@ final readonly class Filters
     }
 
     /**
-     * A copy with one dimension filter added or replaced.
+     * A copy filtered by one dimension, replacing whatever was set before.
+     *
+     * Selecting a country while a route is selected *replaces* it rather than
+     * adding to it, for the reason given on {@see self::active()}: the pair
+     * was never rolled up. Passing null clears the filter entirely.
      */
     public function with(string $dimension, ?string $value): self
     {
         return new self(
             range: $this->range,
             comparison: $this->comparison,
-            route: $dimension === 'route' ? $value : $this->route,
-            country: $dimension === 'country' ? $value : $this->country,
-            channel: $dimension === 'channel' ? $value : $this->channel,
+            route: $dimension === 'route' ? $value : null,
+            country: $dimension === 'country' ? $value : null,
+            channel: $dimension === 'channel' ? $value : null,
         );
     }
 

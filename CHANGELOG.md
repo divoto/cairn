@@ -12,6 +12,44 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [Unreleased]
+
+### Fixed
+
+- **Selecting a country now narrows the numbers.** Clicking a row in the
+  Countries, Top routes or Channels panel added `?country=SG` to the URL and
+  raised a filter chip, but the headline totals and the chart went on showing
+  site-wide figures — the filter reached only the panel it was clicked in.
+  `Overview` never passed the filter to its report at all. It does now, so the
+  totals and the timeseries answer for the selected value. Metrics the rollup
+  never measured at that grain — sessions and bounce rate, which come from a
+  table carrying no dimension columns — render as `—` rather than as a
+  site-wide figure wearing the filter's label. Unique visitors are counted per
+  route as traffic arrives, so a route filter reports them and a country
+  filter withholds them. Panels grouped
+  by another dimension still cannot be narrowed (v1 rolls up one dimension at
+  a time) and now say so beneath their heading instead of leaving the chip to
+  imply otherwise.
+
+- **`filter()` without `groupBy()` returned zero instead of the answer.**
+  `Cairn::report()->filter(Dimension::Country, 'DE')->total()` read the
+  dimensionless "overall" rollup, filtered every row of it out in PHP and
+  reported `0` — a plausible number, and the wrong one. The builder now reads
+  the rollup for the filtered dimension and collapses it, and `timeseries()`
+  applies filters it was previously ignoring outright. Two filters at once
+  throw `UnavailableDimensionException` like every other unmaterialised
+  combination, rather than silently honouring one.
+
+- **A filter now replaces the previous one rather than stacking.** Selecting a
+  country while a route was selected produced a URL naming both, describing an
+  intersection that was never rolled up. Dimension filters are one at a time,
+  in the UI and in `Filters::with()`; a hand-written URL naming two is read as
+  the first rather than half-honoured, and links written back carry only the
+  filter that was applied.
+
+  No data, schema or rollup changes — the fixes are all on the read path, and
+  existing `cairn_aggregates` rows are read as they stand.
+
 ## [1.0.0] - 2026-08-09
 
 ### Changed

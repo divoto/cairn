@@ -83,6 +83,44 @@ days counts three times. Any row spanning more than one day carries
 Visitors are counted site-wide and per route. Asking for them at another
 grouping throws rather than returning a wrong number.
 
+## Narrowing to one dimension value
+
+A filter without a grouping asks a question the rollup can answer — "how much
+traffic came from Germany" — and the builder answers it by reading the country
+rollup and collapsing it to a total:
+
+```php
+Cairn::report()
+    ->lastDays(30)
+    ->metrics(Metric::Pageviews)
+    ->filter(Dimension::Country, 'DE')
+    ->total();
+```
+
+`timeseries()` narrows the same way, which is what lets the dashboard chart one
+country's traffic over time.
+
+**Metrics that were never measured at that grain are omitted.** Sessions,
+bounces and session duration come from `cairn_sessions`, which carries no
+dimension columns, so they do not exist per country. `ReportRow::metric()`
+returns `null` and the dashboard renders `—`. A zero would read as "Germany
+sent no sessions", which is a claim about traffic rather than about what was
+measured.
+
+Unique visitors depend on which dimension you narrowed to. The counter is
+written against keys chosen in advance — one site-wide and one per route — so
+one route's visitors are a real number and one country's were never counted.
+
+| | Site-wide | `filter(Route, …)` | `filter(Country, …)` |
+| --- | --- | --- | --- |
+| Pageviews | ✅ | ✅ | ✅ |
+| Events, conversions, response time | ✅ | ✅ | ✅ |
+| Unique visitors | ✅ | ✅ | `null` |
+| Sessions, bounce rate, avg. session duration | ✅ | `null` | `null` |
+
+Only one dimension at a time. Two filters describe an intersection that was
+never rolled up, and throw for the same reason "top routes in Germany" does.
+
 ## Comparisons
 
 ```php
@@ -109,7 +147,8 @@ Three cases throw, each naming what you asked for:
 a row per distinct value per bucket, forever.
 
 **A combination of two dimensions.** v1 materialises single-dimension rollups
-only. "Top routes in Germany" needs the pair, which is not stored.
+only. "Top routes in Germany" needs the pair, which is not stored — whether it
+is asked as `groupBy(Route)->filter(Country, 'DE')` or as two filters at once.
 
 **Unique visitors at an uncounted grouping.** See above.
 

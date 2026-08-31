@@ -127,6 +127,29 @@ abstract class Widget
     }
 
     /**
+     * Apply the active filter to a report that groups by nothing.
+     *
+     * An ungrouped report can be narrowed to any materialised dimension —
+     * "how much traffic came from Singapore" reads the country rollup and
+     * sums it — so a widget showing totals honours whichever filter is set
+     * rather than only its own. Metrics that were never measured at that
+     * grain are omitted from the result; see
+     * {@see Metric::isMeasuredPerDimension()}.
+     */
+    protected function applyActiveFilter(Report $report, Filters $filters): Report
+    {
+        foreach ($filters->active() as $dimension => $value) {
+            $enum = Dimension::tryFrom($dimension);
+
+            if ($enum instanceof Dimension && $enum->isMaterialised()) {
+                $report = $report->filter($enum, $value);
+            }
+        }
+
+        return $report;
+    }
+
+    /**
      * The metrics a ranked table shows by default.
      *
      * @return list<Metric>

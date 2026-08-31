@@ -27,8 +27,11 @@
                 $raw = $row->dimension($dimension);
                 $value = $enum?->display($raw) ?? (string) ($raw ?? '—');
                 $share = ($row->metric($primary) ?? 0.0) / $largest * 100;
+                // with() rather than an override: selecting a dimension
+                // replaces the current filter instead of adding to it, since
+                // the pair was never rolled up.
                 $link = $schema->filterAs
-                    ? url($path).'?'.http_build_query($filters->toQuery([$schema->filterAs => (string) $raw]))
+                    ? url($path).'?'.http_build_query($filters->with($schema->filterAs, (string) $raw)->toQuery())
                     : null;
             @endphp
             <tr>

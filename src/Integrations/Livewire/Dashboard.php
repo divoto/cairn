@@ -69,6 +69,10 @@ final class Dashboard extends Component
     /**
      * Apply a dimension filter, or clear it when the same value is chosen
      * again.
+     *
+     * One at a time: selecting a country replaces a route filter rather than
+     * adding to it, because v1 rolls up one dimension at a time and the pair
+     * was never measured. {@see Filters::active()}
      */
     public function filterBy(string $dimension, string $value): void
     {
@@ -76,7 +80,11 @@ final class Dashboard extends Component
             return;
         }
 
-        $this->{$dimension} = $this->{$dimension} === $value ? '' : $value;
+        $selected = $this->{$dimension} === $value ? '' : $value;
+
+        $this->clearFilters();
+
+        $this->{$dimension} = $selected;
     }
 
     public function clearFilters(): void
