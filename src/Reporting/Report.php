@@ -467,7 +467,7 @@ final class Report
             return null;
         }
 
-        return Dimension::from((string) array_key_first($this->filters));
+        return Dimension::from(array_key_first($this->filters));
     }
 
     /**
