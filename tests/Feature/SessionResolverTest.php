@@ -128,6 +128,27 @@ it('records the entry url once and the exit url on every page', function (): voi
 });
 
 /**
+ * Not every recorded request has a URL to attribute — a console-triggered
+ * entry has none. The column stays null rather than being written as an empty
+ * string, which would become a landing page called "" on the panel.
+ */
+it('stores no landing page for a request that has no url', function (): void {
+    $visitor = random_bytes(16);
+    $start = CarbonImmutable::parse('2026-03-14 12:00:00', 'UTC');
+
+    $session = sessions()->resolve($visitor, $start);
+
+    // No URL at all, which is what the third argument defaults to.
+    sessions()->record($session, $start);
+
+    $row = (array) sessionRows()->first();
+
+    expect(array_key_exists('entry_url', $row))->toBeTrue()
+        ->and($row['entry_url'])->toBeNull()
+        ->and($row['exit_url'])->toBeNull();
+});
+
+/**
  * page_count is incremented in the database rather than read and written back,
  * so two concurrent requests cannot both read 3 and both write 4.
  */

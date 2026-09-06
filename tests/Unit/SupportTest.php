@@ -13,6 +13,7 @@ use Divoto\Cairn\Support\Engine;
 use Divoto\Cairn\Support\EntryMapper;
 use Divoto\Cairn\Support\Format;
 use Divoto\Cairn\Support\RouteNameGrouper;
+use Divoto\Cairn\Support\SubjectKey;
 use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\WidgetLayout;
 use Divoto\Cairn\Widgets\WidgetSchema;
@@ -399,3 +400,31 @@ it('falls back to a plain empty message', function (): void {
     expect((new WidgetSchema(layout: WidgetLayout::Table))->emptyMessage())
         ->toBe('Nothing recorded in this period.');
 });
+
+/*
+|--------------------------------------------------------------------------
+| SubjectKey
+|--------------------------------------------------------------------------
+*/
+
+it('splits a subject key into its type and id', function (): void {
+    expect(SubjectKey::parse('article:42'))->toBe(['type' => 'article', 'id' => '42'])
+        // A class name carries its own colons in no version of PHP, but a
+        // morph alias is free-form, so the *last* separator is the one.
+        ->and(SubjectKey::parse('App\\Models\\Article:42'))
+        ->toBe(['type' => 'App\\Models\\Article', 'id' => '42']);
+});
+
+/**
+ * Aggregate rows are read back from the database, where a key could have been
+ * written by an older version, edited by hand, or corrupted. The widget skips
+ * what it cannot parse rather than throwing and taking the panel down.
+ */
+it('refuses a subject key that names no model', function (string $key): void {
+    expect(SubjectKey::parse($key))->toBeNull();
+})->with([
+    'no separator' => ['article'],
+    'empty' => [''],
+    'nothing before it' => [':42'],
+    'nothing after it' => ['article:'],
+]);

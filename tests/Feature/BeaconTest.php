@@ -251,6 +251,23 @@ it('keeps a zero CLS as the good score it is', function (): void {
 });
 
 /**
+ * A CLS that is not a number at all — a string from a hand-rolled client, or a
+ * field the browser filled with something unexpected — is dropped on its own.
+ * The LCP measured in the same submission is still worth keeping.
+ */
+it('drops a CLS that is not a number', function (): void {
+    recordPageview();
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42, 'lcp' => 1200, 'cls' => 'quite a lot'])
+        ->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['lcp_ms'] ?? null)->toBe(1200)
+        ->and($row['cls_milli'] ?? null)->toBeNull();
+});
+
+/**
  * The three observers are Chromium-only, and the beacon initialises all three
  * to zero — so Firefox and Safari submit `lcp: 0, inp: 0, cls: 0`, which field
  * by field is indistinguishable from a Chromium page that painted instantly

@@ -169,6 +169,19 @@ it('derives every vital from a sum over its own sample count', function (): void
         ->toBe(['numerator' => Metric::ClsGood, 'denominator' => Metric::ClsSamples]);
 });
 
+/**
+ * A derived metric survives only if both of its components do. There is no
+ * bounce rate for a country while its session count does not exist, and
+ * reporting one would name a figure nothing measured.
+ */
+it('measures a derived metric per dimension only when both components are', function (): void {
+    expect(Metric::AvgTimeOnPage->isMeasuredPerDimension())->toBeTrue()
+        // Sessions is the denominator, and it is not measured per dimension.
+        ->and(Metric::BounceRate->isMeasuredPerDimension())->toBeFalse()
+        ->and(Metric::AvgSessionDuration->isMeasuredPerDimension())->toBeFalse()
+        ->and(Metric::ViewsPerSession->isMeasuredPerDimension())->toBeFalse();
+});
+
 it('gives every metric a label', function (Metric $metric): void {
     expect($metric->label())->not->toBe('');
 })->with(allMetrics());

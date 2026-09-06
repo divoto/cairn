@@ -5,8 +5,10 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Concerns\HasAnalytics;
 use Divoto\Cairn\Contracts\Storage;
+use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\Filters;
 use Divoto\Cairn\Widgets\Shipped\TopContent;
@@ -59,6 +61,30 @@ final class LabelledArticle extends Model
     }
 }
 
+/**
+ * A model whose table does not exist, to prove a broken subject type costs one
+ * panel's labels rather than the page.
+ */
+final class Tableless extends Model
+{
+    protected $table = 'no_such_table';
+}
+
+/**
+ * A model that reports no usable primary key.
+ */
+final class Keyless extends Model
+{
+    protected $table = 'articles';
+
+    public $timestamps = false;
+
+    public function getKey(): mixed
+    {
+        return null;
+    }
+}
+
 beforeEach(function (): void {
     Schema::create('articles', function (Blueprint $table): void {
         $table->id();
@@ -97,6 +123,29 @@ function rollupToday(): void
 
     app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
     app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+/**
+ * Write one rolled-up subject row directly, for the cases where the model
+ * behind the key cannot be created through the normal path.
+ */
+function seedSubjectAggregate(string $key): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay();
+
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+    $encoded = (string) json_encode([Dimension::Subject->value => $key]);
+
+    $connection->table(Tables::aggregates())->insert([
+        'period' => Period::Hour->value,
+        'bucket' => $today->addHours(9)->getTimestamp(),
+        'aggregate' => Dimension::Subject->value,
+        'key' => $encoded,
+        'key_hash' => Binary::bind($connection, substr(hash('sha256', $encoded, true), 0, 16)),
+        'type' => Metric::Pageviews->value,
+        'value' => 1,
+        'tenant_id' => '',
+    ]);
 }
 
 function articleEntries(): Builder
@@ -379,4 +428,56 @@ it('keeps a row whose model has since been deleted', function (): void {
 
     expect(app(TopContent::class)->rows(new Filters(range: 'today'))->first()?->dimension('subject'))
         ->toBe(Article::class.':'.$key);
+});
+
+it('reads back the conversions it recorded', function (): void {
+    $article = Article::query()->create(['title' => 'How we built it']);
+
+    Route::middleware('web')->get('/articles/{article}/buy', function (string $article): string {
+        Article::query()->findOrFail($article)->trackConversion('purchase', 9.99);
+
+        return 'ok';
+    });
+
+    cairnTest()->get('/articles/'.articleKey($article).'/buy');
+    rollupToday();
+
+    expect($article->analyticsConversions())->toBe(1);
+});
+
+/**
+ * A subject type that no longer maps to a model — a class deleted between
+ * releases, or a morph alias removed from the map — leaves the panel showing
+ * the stored key rather than taking the dashboard down.
+ */
+it('shows the raw key when a subject type is no longer a model', function (): void {
+    seedSubjectAggregate('App\\Models\\Gone:42');
+
+    expect(app(TopContent::class)->rows(new Filters(range: 'today'))->first()?->dimension('subject'))
+        ->toBe('App\\Models\\Gone:42');
+});
+
+/**
+ * A table dropped underneath a subject type that still resolves to a class.
+ * The query throws, the panel reports it and shows keys; the other seventeen
+ * panels are still worth drawing.
+ */
+it('survives a subject whose table has been dropped', function (): void {
+    seedSubjectAggregate(Tableless::class.':42');
+
+    expect(app(TopContent::class)->rows(new Filters(range: 'today'))->first()?->dimension('subject'))
+        ->toBe(Tableless::class.':42');
+});
+
+/**
+ * A model that cannot produce a usable key cannot be labelled, so the row
+ * keeps its stored key rather than being dropped or labelled wrongly.
+ */
+it('keeps the key for a model with no usable primary key', function (): void {
+    Article::query()->create(['title' => 'Keyless']);
+
+    seedSubjectAggregate(Keyless::class.':1');
+
+    expect(app(TopContent::class)->rows(new Filters(range: 'today'))->first()?->dimension('subject'))
+        ->toBe(Keyless::class.':1');
 });

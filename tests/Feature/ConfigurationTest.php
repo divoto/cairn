@@ -239,3 +239,33 @@ it('supplies a whole block a published config never had', function (): void {
     expect(config('cairn.dashboard.widgets'))->toBeArray()
         ->and(config('cairn.dashboard.widgets'))->not->toBe([]);
 });
+
+/**
+ * `config:cache` writes the merged array to disk and the framework loads that
+ * instead of running providers' merges. Re-merging on top of it would be worse
+ * than pointless: the cached array is already the finished product, and a
+ * second pass would reintroduce defaults for anything the deployer overrode in
+ * a way the cache had already resolved.
+ *
+ * The real consequence is documented in the upgrade notes rather than papered
+ * over here — an application that cached its config under an older version is
+ * running that version's array until it caches again, which is exactly what
+ * WidgetRegistry::DEFAULTS still exists to survive.
+ */
+it('leaves a cached configuration alone', function (): void {
+    $published = ['enabled' => true, 'privacy' => ['respect_dnt' => false]];
+
+    config()->set('cairn', $published);
+
+    // The binding configurationIsCached() consults before touching the disk.
+    app()->instance('config_loaded_from_cache', true);
+
+    (new CairnServiceProvider(app()))->register();
+
+    // Untouched: no defaults filled in, not even the top-level blocks.
+    expect(config('cairn'))->toBe($published)
+        ->and(config('cairn.privacy.respect_gpc'))->toBeNull()
+        ->and(config('cairn.retention'))->toBeNull();
+
+    app()->forgetInstance('config_loaded_from_cache');
+});
