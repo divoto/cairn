@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Widgets;
 
+use Divoto\Cairn\CairnServiceProvider;
 use Divoto\Cairn\Widgets\Shipped\ActivityFeed;
 use Divoto\Cairn\Widgets\Shipped\Browsers;
 use Divoto\Cairn\Widgets\Shipped\Campaigns;
@@ -48,6 +49,13 @@ final readonly class WidgetRegistry
      *
      * An explicitly empty array is still honoured: that is somebody choosing to
      * show nothing, which is different from never having been asked.
+     *
+     * Since 1.2 {@see CairnServiceProvider::mergeCairnConfig()}
+     * fills the key in at merge time, so this rarely fires. It is kept because
+     * the merge is skipped entirely when configuration is cached: an
+     * application that ran `config:cache` before upgrading is running on a
+     * cached array built by the previous version, and this is what stands
+     * between that and an empty dashboard.
      *
      * @var list<class-string<Widget>>
      */

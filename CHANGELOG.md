@@ -58,6 +58,19 @@ release; nothing new is asked of a visitor anywhere in it.
 
 ### Changed
 
+- **A published config file now picks up settings added by later releases.**
+  Laravel merges top-level keys only, so a deployer who published
+  `config/cairn.php` at 1.0 never saw a key added inside `privacy` or
+  `dashboard` — their nested array won whole and the new setting read as null.
+  That is why `dashboard.widgets` needed a hard-coded fallback in 1.1, and
+  every future nested key would have needed its own. Cairn now merges its
+  defaults underneath a published file recursively, with one rule: **named
+  settings fill in, lists stay exactly as written.** Removing a widget or an
+  ignore pattern is still permanent, and `'widgets' => []` still means no
+  panels. Turn a setting off by writing `false` rather than by deleting it — a
+  deleted key is one you have expressed no opinion about, so it returns at its
+  default.
+
 - **A session's `entry_url` and `exit_url` now hold a collapsed path.**
   Identifiers become `{id}`, so every order's invoice stops being its own
   landing page with one session against it, and the query string is dropped —
@@ -88,9 +101,14 @@ the new panels are correct but empty until traffic accumulates. How far back it 
 not been pruned. Core Web Vitals are the exception either way: nothing before
 the upgrade stored them, so that panel fills from now on regardless.
 
-If you have published `config/cairn.php`, the three new default panels — Web
-vitals, Landing pages and Top content — will not appear until you add them to
-your own `dashboard.widgets`. Laravel merges top-level config keys only.
+If you have published `config/cairn.php` **with a `dashboard.widgets` list**,
+the three new default panels — Web vitals, Landing pages and Top content — will
+not appear until you add them to it. That list is yours and Cairn will not add
+to it; every other new setting fills in on its own, as described under Changed.
+
+If you ran `config:cache` before upgrading, run it again. A cached
+configuration skips the merge entirely, so it is still the array your previous
+version built.
 
 ## [1.1.0] - 2026-08-31
 

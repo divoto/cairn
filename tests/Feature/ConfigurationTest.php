@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Divoto\Cairn\CairnServiceProvider;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recorders\Conversions;
 use Divoto\Cairn\Recorders\PageViews;
@@ -127,4 +128,114 @@ it('publishes a file that parses and returns an array', function (): void {
 
     expect($published)->toBeArray()
         ->and($published)->toHaveKeys(['enabled', 'privacy', 'retention', 'recorders', 'dashboard']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Merging under a published config file
+|--------------------------------------------------------------------------
+|
+| A published config/cairn.php does not change when the package updates, so
+| the merge decides what a deployer who published at 1.0 sees in 1.2. Laravel
+| merges top-level keys only, which is how dashboard.widgets came to need a
+| hard-coded fallback; these pin the rule that replaces it.
+|
+*/
+
+/**
+ * Re-run the provider's registration over a stand-in published config.
+ *
+ * @param  array<string, mixed>  $published
+ */
+function republish(array $published): void
+{
+    config()->set('cairn', $published);
+
+    (new CairnServiceProvider(app()))->register();
+}
+
+it('supplies a nested key a published config predates', function (): void {
+    // A published file from before Core Web Vitals and the new panels.
+    republish([
+        'enabled' => true,
+        'privacy' => ['respect_dnt' => false],
+    ]);
+
+    expect(config('cairn.privacy.respect_dnt'))->toBeFalse()
+        // Never written by this deployer, and now theirs at our default.
+        ->and(config('cairn.privacy.respect_gpc'))->toBeTrue()
+        ->and(config('cairn.privacy.geo_precision'))->not->toBeNull()
+        // A whole top-level block they never had.
+        ->and(config('cairn.retention.entries'))->not->toBeNull();
+});
+
+/**
+ * The failure mode that made Laravel's own recursive helper unusable here:
+ * array_replace_recursive merges lists by index, so a trimmed widget list
+ * comes back padded out of ours, with a duplicate where the lengths cross.
+ */
+it('leaves a published list exactly as it was written', function (): void {
+    republish([
+        'enabled' => true,
+        'dashboard' => ['widgets' => ['Overview', 'TopRoutes']],
+    ]);
+
+    expect(config('cairn.dashboard.widgets'))->toBe(['Overview', 'TopRoutes']);
+});
+
+it('honours an explicitly empty list rather than restoring the defaults', function (): void {
+    republish([
+        'enabled' => true,
+        'dashboard' => ['widgets' => []],
+    ]);
+
+    expect(config('cairn.dashboard.widgets'))->toBe([]);
+});
+
+/**
+ * Choosing to ignore nothing is a choice. Appending our nine patterns back
+ * would quietly resume dropping requests the deployer wanted recorded.
+ */
+it('does not append its own defaults to a published ignore list', function (): void {
+    republish([
+        'enabled' => true,
+        'recorders' => [PageViews::class => ['ignore' => ['admin/*']]],
+    ]);
+
+    expect(config('cairn.recorders.'.PageViews::class.'.ignore'))->toBe(['admin/*'])
+        // Sibling keys inside the same recorder still fill in.
+        ->and(config('cairn.recorders.'.PageViews::class.'.enabled'))->toBeTrue();
+});
+
+/**
+ * Null is an answer, not an absence. A deployer who wrote it meant it.
+ */
+it('keeps a published null rather than treating it as unset', function (): void {
+    republish([
+        'enabled' => true,
+        'domain' => null,
+    ]);
+
+    expect(config('cairn.domain'))->toBeNull();
+});
+
+it('lets a published value win at every depth', function (): void {
+    republish([
+        'enabled' => false,
+        'privacy' => ['maxmind' => ['account_id' => 'mine']],
+    ]);
+
+    expect(config('cairn.enabled'))->toBeFalse()
+        ->and(config('cairn.privacy.maxmind.account_id'))->toBe('mine');
+});
+
+/**
+ * A deployer who published before a block existed gets the whole block, which
+ * is the case dashboard.widgets needed its own fallback for.
+ */
+it('supplies a whole block a published config never had', function (): void {
+    republish(['enabled' => true]);
+
+    expect(config('cairn.dashboard.widgets'))->toBeArray()
+        ->and(config('cairn.dashboard.widgets'))->not->toBe([]);
 });
