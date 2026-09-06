@@ -49,6 +49,20 @@ final readonly class DatabaseStorage implements Storage
      */
     private const DELETE_CHUNK = 1000;
 
+    /**
+     * Google's "good" thresholds for the Core Web Vitals.
+     *
+     * Constants rather than config: they are the published definition of the
+     * metric, and a deployment that moved them would report a "good LCP share"
+     * that meant something different from everybody else's.
+     */
+    private const LCP_GOOD_MS = 2500;
+
+    private const INP_GOOD_MS = 200;
+
+    /** 0.10, in the thousandths the column stores. */
+    private const CLS_GOOD_MILLI = 100;
+
     public function __construct(
         private DatabaseManager $database,
     ) {}
@@ -355,6 +369,24 @@ final readonly class DatabaseStorage implements Storage
             'sum(case when time_on_page is null then 0 else 1 end) as m_time_samples',
             'sum(coalesce(scroll_depth, 0)) as m_scroll_total',
             'sum(case when scroll_depth is null then 0 else 1 end) as m_scroll_samples',
+
+            // Core Web Vitals. Each is a sum, a sample count and a count of
+            // the samples that met Google's threshold, so the share of good
+            // page views can be recomputed at whatever level it is displayed
+            // at rather than averaged from per-bucket shares.
+            //
+            // These ride the entry measurement, so every materialised
+            // dimension gets them without a second pass — vitals per route
+            // fall out of the same query as vitals per country.
+            'sum(coalesce(lcp_ms, 0)) as m_lcp_ms',
+            'sum(case when lcp_ms is null then 0 else 1 end) as m_lcp_samples',
+            'sum(case when lcp_ms is not null and lcp_ms <= '.self::LCP_GOOD_MS.' then 1 else 0 end) as m_lcp_good',
+            'sum(coalesce(inp_ms, 0)) as m_inp_ms',
+            'sum(case when inp_ms is null then 0 else 1 end) as m_inp_samples',
+            'sum(case when inp_ms is not null and inp_ms <= '.self::INP_GOOD_MS.' then 1 else 0 end) as m_inp_good',
+            'sum(coalesce(cls_milli, 0)) as m_cls_milli',
+            'sum(case when cls_milli is null then 0 else 1 end) as m_cls_samples',
+            'sum(case when cls_milli is not null and cls_milli <= '.self::CLS_GOOD_MILLI.' then 1 else 0 end) as m_cls_good',
         ]);
     }
 
@@ -381,6 +413,15 @@ final readonly class DatabaseStorage implements Storage
             'm_time_samples' => Metric::TimeOnPageSamples,
             'm_scroll_total' => Metric::ScrollDepthTotal,
             'm_scroll_samples' => Metric::ScrollDepthSamples,
+            'm_lcp_ms' => Metric::LcpMilliseconds,
+            'm_lcp_samples' => Metric::LcpSamples,
+            'm_lcp_good' => Metric::LcpGood,
+            'm_inp_ms' => Metric::InpMilliseconds,
+            'm_inp_samples' => Metric::InpSamples,
+            'm_inp_good' => Metric::InpGood,
+            'm_cls_milli' => Metric::ClsMilli,
+            'm_cls_samples' => Metric::ClsSamples,
+            'm_cls_good' => Metric::ClsGood,
         ];
 
         $out = [];

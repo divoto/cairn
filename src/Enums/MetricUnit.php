@@ -27,6 +27,17 @@ enum MetricUnit: string
     case Milliseconds = 'milliseconds';
 
     /**
+     * A ratio stored multiplied by a thousand.
+     *
+     * Cumulative Layout Shift is the only one. It is a small fraction, and a
+     * rollup that summed it as a float would drift; stored as thousandths it
+     * sums as an integer and is divided back on the way out, so what a reader
+     * sees is the 0.08 the web platform defines rather than the 80 the table
+     * holds.
+     */
+    case Thousandths = 'thousandths';
+
+    /**
      * A monetary amount.
      *
      * Cairn stores no currency code — a deployment reports in one currency,

@@ -164,6 +164,114 @@ it('accepts measurements for a pageview the server already recorded', function (
         ->and($row['screen_class'] ?? null)->toBe(ScreenClass::Large->value);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Core Web Vitals
+|--------------------------------------------------------------------------
+|
+| The beacon has measured LCP, INP and CLS since 1.0 and put all three in
+| every payload; until 1.2 the endpoint validated four other fields and
+| dropped these. Nothing new is asked of a visitor — these numbers were
+| already leaving the browser.
+|
+*/
+
+it('stores the vitals the beacon has always sent', function (): void {
+    recordPageview();
+
+    postBeacon([
+        'url' => '/pricing',
+        'seconds' => 42,
+        'scroll' => 80,
+        'viewport' => 1280,
+        'lcp' => 1840,
+        'inp' => 96,
+        'cls' => 0.043,
+    ])->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['lcp_ms'] ?? null)->toBe(1840)
+        ->and($row['inp_ms'] ?? null)->toBe(96)
+        // Thousandths, so the rollup sums integers rather than floats.
+        ->and($row['cls_milli'] ?? null)->toBe(43);
+});
+
+/**
+ * A beacon cached from 1.1 sends exactly the fields 1.1 sent. It must keep
+ * working, and the measurement it does carry must still be kept.
+ */
+it('still records time on page for a payload carrying no vitals', function (): void {
+    recordPageview();
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42, 'scroll' => 80])->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['time_on_page'] ?? null)->toBe(42)
+        ->and($row['lcp_ms'] ?? null)->toBeNull()
+        ->and($row['cls_milli'] ?? null)->toBeNull();
+});
+
+/**
+ * An implausible value is dropped on its own rather than rejecting the
+ * submission: the time on page in the same body is still worth keeping.
+ */
+it('drops an out-of-range vital without losing the rest of the payload', function (): void {
+    recordPageview();
+
+    postBeacon([
+        'url' => '/pricing',
+        'seconds' => 42,
+        'lcp' => 1840,
+        'inp' => 999999,
+        'cls' => 42.0,
+    ])->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['time_on_page'] ?? null)->toBe(42)
+        ->and($row['lcp_ms'] ?? null)->toBe(1840)
+        ->and($row['inp_ms'] ?? null)->toBeNull()
+        ->and($row['cls_milli'] ?? null)->toBeNull();
+});
+
+/**
+ * A zero CLS is the best possible score, so it has to be stored rather than
+ * read as "missing" — otherwise the good share is computed only over pages
+ * that *did* shift, and every perfect page is excluded from its own metric.
+ */
+it('keeps a zero CLS as the good score it is', function (): void {
+    recordPageview();
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42, 'lcp' => 1200, 'inp' => 40, 'cls' => 0])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('cls_milli'))->toBe(0);
+});
+
+/**
+ * The three observers are Chromium-only, and the beacon initialises all three
+ * to zero — so Firefox and Safari submit `lcp: 0, inp: 0, cls: 0`, which field
+ * by field is indistinguishable from a Chromium page that painted instantly
+ * and never shifted. LCP breaks the tie: it is non-zero whenever the observers
+ * ran at all. Without this, every non-Chromium visit would count as a perfect
+ * CLS and swamp the good share with scores nobody measured.
+ */
+it('records no vitals at all when the browser measured none', function (): void {
+    recordPageview();
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42, 'lcp' => 0, 'inp' => 0, 'cls' => 0])
+        ->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['time_on_page'] ?? null)->toBe(42)
+        ->and($row['lcp_ms'] ?? null)->toBeNull()
+        ->and($row['inp_ms'] ?? null)->toBeNull()
+        ->and($row['cls_milli'] ?? null)->toBeNull();
+});
+
 /**
  * The visitor hash is derived from the request, never read from the body.
  * Without a matching server-side entry, anyone could POST arbitrary numbers

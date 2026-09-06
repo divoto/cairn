@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\MetricUnit;
+use Divoto\Cairn\Support\Format;
 
 /*
 |--------------------------------------------------------------------------
@@ -133,6 +134,39 @@ it('renders rates as percentages and durations as time', function (): void {
         ->and(Metric::AvgResponseTime->unit())->toBe(MetricUnit::Milliseconds)
         ->and(Metric::ConversionValue->unit())->toBe(MetricUnit::Currency)
         ->and(Metric::Pageviews->unit())->toBe(MetricUnit::Count);
+});
+
+/**
+ * CLS is stored as thousandths so a rollup can sum it as an integer, and shown
+ * as the ratio the web platform actually defines. The unit is what carries
+ * that divide-by-a-thousand out to every renderer, so a Blade view, the JSON
+ * API and a CSV export cannot disagree about it.
+ */
+it('reports the vitals in the units they are defined in', function (): void {
+    expect(Metric::AvgLcp->unit())->toBe(MetricUnit::Milliseconds)
+        ->and(Metric::AvgInp->unit())->toBe(MetricUnit::Milliseconds)
+        ->and(Metric::AvgCls->unit())->toBe(MetricUnit::Thousandths)
+        ->and(Metric::LcpGoodRate->unit())->toBe(MetricUnit::Percentage)
+        ->and(Metric::InpGoodRate->unit())->toBe(MetricUnit::Percentage)
+        ->and(Metric::ClsGoodRate->unit())->toBe(MetricUnit::Percentage);
+});
+
+it('shows a summed CLS back as the fraction it was measured as', function (): void {
+    // 290 thousandths over two samples is 0.145 per page view.
+    expect(Format::metric(Metric::AvgCls, 145.0))->toBe('0.145');
+});
+
+/**
+ * Each average is a ratio of two stored numbers, never a stored average — the
+ * distinction the whole enum exists for.
+ */
+it('derives every vital from a sum over its own sample count', function (): void {
+    expect(Metric::AvgLcp->ratio())
+        ->toBe(['numerator' => Metric::LcpMilliseconds, 'denominator' => Metric::LcpSamples])
+        ->and(Metric::LcpGoodRate->ratio())
+        ->toBe(['numerator' => Metric::LcpGood, 'denominator' => Metric::LcpSamples])
+        ->and(Metric::ClsGoodRate->ratio())
+        ->toBe(['numerator' => Metric::ClsGood, 'denominator' => Metric::ClsSamples]);
 });
 
 it('gives every metric a label', function (Metric $metric): void {

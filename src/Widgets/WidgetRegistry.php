@@ -19,6 +19,7 @@ use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\Referrers;
 use Divoto\Cairn\Widgets\Shipped\Sources;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -67,6 +68,7 @@ final readonly class WidgetRegistry
         // A wide panel in the middle of the grid leaves a gap beside the panel
         // before it, because nothing narrow can be pulled up to fill the row.
         TopRoutes::class,
+        WebVitals::class,
         ActivityFeed::class,
     ];
 

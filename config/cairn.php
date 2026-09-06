@@ -23,6 +23,7 @@ use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\Referrers;
 use Divoto\Cairn\Widgets\Shipped\Sources;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 
 return [
 
@@ -414,6 +415,7 @@ return [
             // Full-width panels last: one placed mid-grid leaves a gap beside
             // whatever narrow panel precedes it.
             TopRoutes::class,
+            WebVitals::class,
             ActivityFeed::class,
         ],
     ],

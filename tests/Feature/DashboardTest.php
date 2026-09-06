@@ -21,6 +21,7 @@ use Divoto\Cairn\Widgets\Shipped\Languages;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\ScreenSizes;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 use Divoto\Cairn\Widgets\Widget;
 use Divoto\Cairn\Widgets\WidgetLayout;
 use Divoto\Cairn\Widgets\WidgetRegistry;
@@ -460,7 +461,7 @@ it('caps a filter value read from the URL', function (): void {
 */
 
 it('registers every shipped widget', function (): void {
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(15);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(16);
 });
 
 /**
@@ -478,7 +479,7 @@ it('falls back to the shipped widgets when config predates the key', function ()
         // No 'widgets' key, exactly as an older published config would have.
     ]);
 
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(15);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(16);
 
     cairnTest()->get('/cairn')->assertOk()->assertSee('Top routes');
 });
@@ -513,6 +514,103 @@ it('skips a widget class that cannot be resolved', function (): void {
     config()->set('cairn.dashboard.widgets', [TopRoutes::class, 'Divoto\Cairn\NotAWidget']);
 
     expect(app(WidgetRegistry::class)->all())->toHaveCount(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Core Web Vitals
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Seed traffic with measured vitals on one route and none on another, which is
+ * what an installation actually looks like: the observers are Chromium-only
+ * and the beacon is optional.
+ */
+function seedVitalsTraffic(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+
+    foreach ([
+        ['pricing.index', 1800, 90, 40],
+        ['pricing.index', 4200, 350, 250],
+        ['home.index', null, null, null],
+    ] as $index => [$route, $lcp, $inp, $cls]) {
+        /** @var Collection<int, Entry> $collection */
+        $collection = new Collection([new Entry(
+            occurredAt: $today->addMinutes($index),
+            type: EntryType::Pageview,
+            visitor: random_bytes(16),
+            route: $route,
+            url: '/'.$route,
+            durationMs: 20,
+            lcpMs: $lcp,
+            inpMs: $inp,
+            clsMilli: $cls,
+        )]);
+
+        app(Storage::class)->store($collection);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('renders the web vitals panel', function (): void {
+    seedVitalsTraffic();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Core Web Vitals')
+        ->assertSee('pricing.index');
+});
+
+/**
+ * The acceptance criterion for the block: one of the two measured page views
+ * met every threshold, so each good share is exactly half — computed from the
+ * stored good count over the stored sample count, not averaged from per-bucket
+ * shares.
+ */
+it('reports the good share as a ratio of the counts that were stored', function (): void {
+    seedVitalsTraffic();
+
+    $row = app(WebVitals::class)->rows(new Filters(range: 'today'))->first();
+
+    expect($row?->metric(Metric::LcpGoodRate))->toBe(0.5)
+        ->and($row?->metric(Metric::InpGoodRate))->toBe(0.5)
+        ->and($row?->metric(Metric::ClsGoodRate))->toBe(0.5)
+        // 6000ms over two samples, 440ms over two, 290 thousandths over two.
+        ->and($row?->metric(Metric::AvgLcp))->toBe(3000.0)
+        ->and($row?->metric(Metric::AvgInp))->toBe(220.0)
+        ->and($row?->metric(Metric::AvgCls))->toBe(145.0);
+});
+
+/**
+ * A route nothing measured is left out rather than rendered as a row of em
+ * dashes, which takes as much space as an answer while saying nothing.
+ */
+it('leaves out a route with no vitals samples', function (): void {
+    seedVitalsTraffic();
+
+    $routes = app(WebVitals::class)->rows(new Filters(range: 'today'))
+        ->map(static fn (ReportRow $row): string => (string) $row->dimension('route'))
+        ->values()
+        ->all();
+
+    expect($routes)->toContain('pricing.index');
+    expect(in_array('home.index', $routes, true))->toBeFalse();
+});
+
+/**
+ * Without the beacon nothing measures a vital at all. An empty panel has to
+ * say that, rather than leaving a reader to conclude their pages are slow.
+ */
+it('tells the reader the vitals panel needs the beacon', function (): void {
+    config()->set('cairn.dashboard.widgets', [WebVitals::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('This needs the optional JavaScript beacon, which is not enabled.');
 });
 
 /*

@@ -76,6 +76,28 @@ function seedClientEntry(string $at, ?string $language, ?ScreenClass $screenClas
     app(Storage::class)->store($collection);
 }
 
+/**
+ * Seed a pageview carrying measured Core Web Vitals. CLS is given in the
+ * thousandths the column stores, so every expectation stays hand-calculable.
+ */
+function seedVitalsEntry(string $at, ?int $lcpMs, ?int $inpMs, ?int $clsMilli): void
+{
+    /** @var Collection<int, Entry> $collection */
+    $collection = new Collection([new Entry(
+        occurredAt: CarbonImmutable::parse($at, 'UTC'),
+        type: EntryType::Pageview,
+        visitor: random_bytes(16),
+        route: 'pricing.index',
+        url: '/pricing',
+        durationMs: 20,
+        lcpMs: $lcpMs,
+        inpMs: $inpMs,
+        clsMilli: $clsMilli,
+    )]);
+
+    app(Storage::class)->store($collection);
+}
+
 function metricFor(string $type, string $aggregate = 'overall'): float
 {
     $value = aggregates()
@@ -287,6 +309,89 @@ it('materialises the language and screen class already recorded', function (): v
 
     expect(columnFloat($english))->toBe(2.0)
         ->and(columnFloat($large))->toBe(2.0);
+});
+
+/**
+ * Nine aggregates, not three: a sum, a sample count and a count of the samples
+ * that met the threshold, for each vital. The good share has to be recomputed
+ * at the level it is shown at — averaging seven daily good-shares gives a
+ * different, wrong answer from dividing the week's good count by the week's
+ * samples, which is the whole reason Metric separates additive from derived.
+ */
+it('rolls up the three vitals as a sum, a sample count and a good count', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1800, 90, 40);
+    seedVitalsEntry('2026-03-14 09:05:00', 4200, 350, 250);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    // One of the two met every threshold: LCP under 2500, INP under 200,
+    // CLS under 0.10.
+    expect(metricFor(Metric::LcpMilliseconds->value))->toBe(6000.0)
+        ->and(metricFor(Metric::LcpSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::LcpGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::InpMilliseconds->value))->toBe(440.0)
+        ->and(metricFor(Metric::InpSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::InpGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsMilli->value))->toBe(290.0)
+        ->and(metricFor(Metric::ClsSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::ClsGood->value))->toBe(1.0);
+});
+
+/**
+ * The vitals ride the entry measurement, so every materialised dimension gets
+ * them without a second pass — vitals per route fall out of the same query as
+ * vitals per country.
+ */
+it('measures the vitals for every materialised dimension, not just site-wide', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1800, 90, 40);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::LcpGood->value, 'route'))->toBe(1.0);
+});
+
+/**
+ * A page nothing measured contributes to no sample count, so it cannot drag a
+ * good share down. An unmeasured page is not a slow one.
+ */
+it('counts no vitals sample for an entry that carries none', function (): void {
+    seedEntry('2026-03-14 09:00:00');
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::LcpSamples->value))->toBe(0.0)
+        ->and(metricFor(Metric::Pageviews->value))->toBe(1.0);
+});
+
+/**
+ * A perfect CLS is zero, and zero is exactly what the rollup drops from the
+ * sum. The sample and good counts are what carry it, which is why the average
+ * is a ratio of two stored numbers rather than a stored average.
+ */
+it('counts a zero CLS as a measured, good sample', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1200, 40, 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::ClsSamples->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsMilli->value))->toBe(0.0);
 });
 
 /**

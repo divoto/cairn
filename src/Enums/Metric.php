@@ -53,6 +53,40 @@ enum Metric: string
     /** How many entries contributed to ScrollDepthTotal. */
     case ScrollDepthSamples = 'scroll_depth_samples';
 
+    /**
+     * Core Web Vitals, summed with a sample count and a "good" count each.
+     *
+     * The good count is what the widget leads on. An average LCP hides its own
+     * tail — one slow render in ten barely moves a mean, and is exactly the
+     * experience worth knowing about — so the headline is the share of page
+     * views that met Google's threshold, and the average sits beside it as
+     * context. A true p75 needs per-bucket histograms and is not stored here.
+     */
+    case LcpMilliseconds = 'lcp_milliseconds';
+
+    /** How many entries contributed to LcpMilliseconds. */
+    case LcpSamples = 'lcp_samples';
+
+    /** How many of those met the 2500 ms threshold. */
+    case LcpGood = 'lcp_good';
+
+    case InpMilliseconds = 'inp_milliseconds';
+
+    /** How many entries contributed to InpMilliseconds. */
+    case InpSamples = 'inp_samples';
+
+    /** How many of those met the 200 ms threshold. */
+    case InpGood = 'inp_good';
+
+    /** Cumulative Layout Shift, in thousandths, summed. */
+    case ClsMilli = 'cls_milli';
+
+    /** How many entries contributed to ClsMilli. */
+    case ClsSamples = 'cls_samples';
+
+    /** How many of those met the 0.10 threshold. */
+    case ClsGood = 'cls_good';
+
     /** Total server response time in milliseconds. */
     case ResponseMilliseconds = 'response_milliseconds';
 
@@ -85,6 +119,21 @@ enum Metric: string
 
     case AvgResponseTime = 'avg_response_time';
 
+    case AvgLcp = 'avg_lcp';
+
+    case AvgInp = 'avg_inp';
+
+    case AvgCls = 'avg_cls';
+
+    /** The share of page views whose LCP met the threshold. */
+    case LcpGoodRate = 'lcp_good_rate';
+
+    /** The share of page views whose INP met the threshold. */
+    case InpGoodRate = 'inp_good_rate';
+
+    /** The share of page views whose CLS met the threshold. */
+    case ClsGoodRate = 'cls_good_rate';
+
     case ViewsPerSession = 'views_per_session';
 
     case ConversionRate = 'conversion_rate';
@@ -114,6 +163,12 @@ enum Metric: string
             self::AvgTimeOnPage => ['numerator' => self::TimeOnPageSeconds, 'denominator' => self::TimeOnPageSamples],
             self::AvgScrollDepth => ['numerator' => self::ScrollDepthTotal, 'denominator' => self::ScrollDepthSamples],
             self::AvgResponseTime => ['numerator' => self::ResponseMilliseconds, 'denominator' => self::ResponseSamples],
+            self::AvgLcp => ['numerator' => self::LcpMilliseconds, 'denominator' => self::LcpSamples],
+            self::AvgInp => ['numerator' => self::InpMilliseconds, 'denominator' => self::InpSamples],
+            self::AvgCls => ['numerator' => self::ClsMilli, 'denominator' => self::ClsSamples],
+            self::LcpGoodRate => ['numerator' => self::LcpGood, 'denominator' => self::LcpSamples],
+            self::InpGoodRate => ['numerator' => self::InpGood, 'denominator' => self::InpSamples],
+            self::ClsGoodRate => ['numerator' => self::ClsGood, 'denominator' => self::ClsSamples],
             self::ViewsPerSession => ['numerator' => self::Pageviews, 'denominator' => self::Sessions],
             self::ConversionRate => ['numerator' => self::Conversions, 'denominator' => self::Sessions],
             default => null,
@@ -180,7 +235,22 @@ enum Metric: string
             self::ScrollDepthTotal,
             self::ScrollDepthSamples,
             self::AvgTimeOnPage,
-            self::AvgScrollDepth => true,
+            self::AvgScrollDepth,
+            self::LcpMilliseconds,
+            self::LcpSamples,
+            self::LcpGood,
+            self::InpMilliseconds,
+            self::InpSamples,
+            self::InpGood,
+            self::ClsMilli,
+            self::ClsSamples,
+            self::ClsGood,
+            self::AvgLcp,
+            self::AvgInp,
+            self::AvgCls,
+            self::LcpGoodRate,
+            self::InpGoodRate,
+            self::ClsGoodRate => true,
             default => false,
         };
     }
@@ -195,7 +265,13 @@ enum Metric: string
             self::AvgScrollDepth => MetricUnit::Percentage,
             self::SessionSeconds, self::TimeOnPageSeconds,
             self::AvgSessionDuration, self::AvgTimeOnPage => MetricUnit::Seconds,
-            self::ResponseMilliseconds, self::AvgResponseTime => MetricUnit::Milliseconds,
+            self::ResponseMilliseconds, self::AvgResponseTime,
+            self::LcpMilliseconds, self::InpMilliseconds,
+            self::AvgLcp, self::AvgInp => MetricUnit::Milliseconds,
+            self::LcpGoodRate, self::InpGoodRate, self::ClsGoodRate => MetricUnit::Percentage,
+            // Stored as thousandths so it could be summed; shown as the ratio
+            // the web platform actually defines.
+            self::ClsMilli, self::AvgCls => MetricUnit::Thousandths,
             self::ConversionValue => MetricUnit::Currency,
             self::ViewsPerSession => MetricUnit::Decimal,
             default => MetricUnit::Count,
@@ -227,6 +303,21 @@ enum Metric: string
             self::AvgTimeOnPage => 'Avg. time on page',
             self::AvgScrollDepth => 'Avg. scroll depth',
             self::AvgResponseTime => 'Avg. response time',
+            self::LcpMilliseconds => 'Total LCP',
+            self::LcpSamples => 'LCP samples',
+            self::LcpGood => 'Good LCP',
+            self::InpMilliseconds => 'Total INP',
+            self::InpSamples => 'INP samples',
+            self::InpGood => 'Good INP',
+            self::ClsMilli => 'Total CLS',
+            self::ClsSamples => 'CLS samples',
+            self::ClsGood => 'Good CLS',
+            self::AvgLcp => 'Avg. LCP',
+            self::AvgInp => 'Avg. INP',
+            self::AvgCls => 'Avg. CLS',
+            self::LcpGoodRate => 'Good LCP',
+            self::InpGoodRate => 'Good INP',
+            self::ClsGoodRate => 'Good CLS',
             self::ViewsPerSession => 'Views per session',
             self::ConversionRate => 'Conversion rate',
         };

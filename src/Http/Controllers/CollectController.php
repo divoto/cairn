@@ -119,7 +119,7 @@ final readonly class CollectController
      * Read the payload, rejecting anything that is not exactly what the beacon
      * sends.
      *
-     * @return array{url: string, seconds: int, scroll: int, screen: ScreenClass}|null
+     * @return array{url: string, seconds: int, scroll: int, screen: ScreenClass, lcp: int|null, inp: int|null, cls: int|null}|null
      */
     private function validate(Request $request): ?array
     {
@@ -155,6 +155,7 @@ final readonly class CollectController
             // The exact viewport width never reaches a column: it is bucketed
             // here and the original is discarded.
             'screen' => ScreenClass::fromWidth($this->integer($data['viewport'] ?? null, 0, 20000) ?? 0),
+            ...$this->vitals($data),
         ];
     }
 
@@ -216,7 +217,7 @@ final readonly class CollectController
      * An update rather than a new row: the beacon is adding what the server
      * could not see about a pageview, not reporting a second pageview.
      *
-     * @param  array{url: string, seconds: int, scroll: int, screen: ScreenClass}  $payload
+     * @param  array{url: string, seconds: int, scroll: int, screen: ScreenClass, lcp: int|null, inp: int|null, cls: int|null}  $payload
      */
     private function apply(int|string $entryId, array $payload): void
     {
@@ -227,7 +228,77 @@ final readonly class CollectController
                 'time_on_page' => $payload['seconds'],
                 'scroll_depth' => $payload['scroll'],
                 'screen_class' => $payload['screen']->value,
+                'lcp_ms' => $payload['lcp'],
+                'inp_ms' => $payload['inp'],
+                'cls_milli' => $payload['cls'],
             ]);
+    }
+
+    /**
+     * Read the three Core Web Vitals out of a payload.
+     *
+     * Every value is optional and out-of-range values become null rather than
+     * rejecting the submission — the time on page in the same body is still
+     * worth keeping, and a beacon cached from an earlier release sends these
+     * fields with nothing in them.
+     *
+     * **LCP decides whether any of them were measured.** The three observers
+     * are Chromium-only, and the beacon initialises all three to zero, so a
+     * visitor on Firefox or Safari submits `lcp: 0, inp: 0, cls: 0` — which is
+     * indistinguishable, field by field, from a Chromium page that painted
+     * instantly, was never clicked and never shifted.
+     *
+     * That ambiguity only matters for CLS, where zero is the *best* possible
+     * score rather than a missing one. Treating every non-Chromium visit as a
+     * perfect CLS would swamp the good-share with scores nobody measured, and
+     * dropping every genuine zero would do the opposite. LCP breaks the tie:
+     * it is non-zero whenever the observers ran at all, so a zero CLS beside a
+     * real LCP is a page that truly did not shift, and a zero CLS on its own is
+     * a browser that was not watching.
+     *
+     * INP needs no such rule. Zero there means nobody interacted, which is
+     * genuinely nothing to report either way.
+     *
+     * @param  array<mixed>  $data
+     * @return array{lcp: int|null, inp: int|null, cls: int|null}
+     */
+    private function vitals(array $data): array
+    {
+        $lcp = $this->integer($data['lcp'] ?? null, 1, 60000);
+
+        if ($lcp === null) {
+            return ['lcp' => null, 'inp' => null, 'cls' => null];
+        }
+
+        return [
+            'lcp' => $lcp,
+            'inp' => $this->integer($data['inp'] ?? null, 1, 60000),
+            // Stored as thousandths so the rollup sums integers rather than
+            // accumulating float error across a bucket.
+            'cls' => $this->milli($data['cls'] ?? null, 10.0),
+        ];
+    }
+
+    /**
+     * Read a ratio as thousandths, or null if it is not one.
+     *
+     * Zero is kept. A page that never shifted scored zero, and that is a
+     * measurement — the caller has already established that something was
+     * measuring.
+     */
+    private function milli(mixed $value, float $max): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $number = (float) $value;
+
+        if ($number < 0.0 || $number > $max) {
+            return null;
+        }
+
+        return (int) round($number * 1000);
     }
 
     /**
