@@ -390,6 +390,12 @@ return [
         // The panels to draw, in order. Remove one, reorder them, or add your
         // own by subclassing Divoto\Cairn\Widgets\Widget — or, for a ranked
         // table of a single dimension, Widgets\DimensionWidget.
+        //
+        // Two more ship ready to use and are left out only to keep this
+        // page short — add them here if you want them:
+        //
+        //   Divoto\Cairn\Widgets\Shipped\Languages::class
+        //   Divoto\Cairn\Widgets\Shipped\ScreenSizes::class  (needs the beacon)
         'widgets' => [
             Overview::class,
             LiveVisitors::class,

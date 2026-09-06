@@ -208,16 +208,16 @@ it('names a widget from its dimension when nothing overrides it', function (): v
     {
         protected function dimension(): Dimension
         {
-            return Dimension::Language;
+            return Dimension::UtmTerm;
         }
     };
 
-    expect($widget->key())->toBe('language')
-        ->and($widget->title())->toBe('Language')
-        ->and($widget->schema()->dimension)->toBe('language')
-        // Only the three dimensions the filter bar understands are clickable;
-        // any other would produce a URL the rest of the dashboard cannot
-        // honour, since v1 rolls up one dimension at a time.
+    expect($widget->key())->toBe('utm_term')
+        ->and($widget->title())->toBe('UTM term')
+        ->and($widget->schema()->dimension)->toBe('utm_term')
+        // Only the dimensions the filter bar understands are clickable; any
+        // other would produce a URL the rest of the dashboard cannot honour,
+        // since v1 rolls up one dimension at a time.
         ->and($widget->schema()->filterAs)->toBeNull();
 });
 

@@ -86,6 +86,8 @@ enum Dimension: string
             self::DeviceType,
             self::Browser,
             self::OperatingSystem,
+            self::ScreenClass,
+            self::Language,
             self::EventName => true,
             default => false,
         };

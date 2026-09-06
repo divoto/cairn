@@ -53,6 +53,7 @@ abstract class DimensionWidget extends Widget
             dimension: $this->dimension()->value,
             metrics: $this->defaultMetrics(),
             filterAs: $this->filterable() ? $this->dimension()->value : null,
+            requiresBeacon: $this->dimension()->requiresBeacon(),
             wide: $this->wide(),
         );
     }
@@ -73,7 +74,7 @@ abstract class DimensionWidget extends Widget
     /**
      * Whether clicking a row should filter the dashboard by it.
      *
-     * Only the three dimensions the filter bar understands are clickable.
+     * Only the dimensions the filter bar understands are clickable.
      * Making every table clickable would produce URLs the rest of the
      * dashboard cannot honour, since v1 rolls up one dimension at a time.
      */
@@ -81,7 +82,13 @@ abstract class DimensionWidget extends Widget
     {
         return in_array(
             $this->dimension(),
-            [Dimension::Route, Dimension::Country, Dimension::Channel],
+            [
+                Dimension::Route,
+                Dimension::Country,
+                Dimension::Channel,
+                Dimension::Language,
+                Dimension::ScreenClass,
+            ],
             true,
         );
     }

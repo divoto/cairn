@@ -42,6 +42,8 @@ final readonly class Filters
         public ?string $route = null,
         public ?string $country = null,
         public ?string $channel = null,
+        public ?string $language = null,
+        public ?string $screenClass = null,
     ) {}
 
     /**
@@ -60,6 +62,8 @@ final readonly class Filters
             route: self::string($request, 'route'),
             country: self::string($request, 'country'),
             channel: self::string($request, 'channel'),
+            language: self::string($request, 'language'),
+            screenClass: self::string($request, 'screen_class'),
         );
     }
 
@@ -141,6 +145,8 @@ final readonly class Filters
             'route' => $this->route,
             'country' => $this->country,
             'channel' => $this->channel,
+            'language' => $this->language,
+            'screen_class' => $this->screenClass,
         ] as $dimension => $value) {
             if ($value !== null) {
                 return [$dimension => $value];
@@ -194,6 +200,8 @@ final readonly class Filters
             route: $dimension === 'route' ? $value : null,
             country: $dimension === 'country' ? $value : null,
             channel: $dimension === 'channel' ? $value : null,
+            language: $dimension === 'language' ? $value : null,
+            screenClass: $dimension === 'screen_class' ? $value : null,
         );
     }
 

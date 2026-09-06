@@ -8,6 +8,7 @@ use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
@@ -50,6 +51,27 @@ function seedEntry(
 
     /** @var Collection<int, Entry> $collection */
     $collection = new Collection([$entry]);
+
+    app(Storage::class)->store($collection);
+}
+
+/**
+ * Seed a pageview carrying the two client-side dimensions. Screen class only
+ * ever arrives with the beacon, so it is set explicitly rather than derived.
+ */
+function seedClientEntry(string $at, ?string $language, ?ScreenClass $screenClass): void
+{
+    /** @var Collection<int, Entry> $collection */
+    $collection = new Collection([new Entry(
+        occurredAt: CarbonImmutable::parse($at, 'UTC'),
+        type: EntryType::Pageview,
+        visitor: random_bytes(16),
+        route: 'pricing.index',
+        url: '/pricing',
+        screenClass: $screenClass,
+        language: $language,
+        durationMs: 20,
+    )]);
 
     app(Storage::class)->store($collection);
 }
@@ -230,6 +252,41 @@ it('materialises single-dimension breakdowns', function (): void {
         ->value('value');
 
     expect(columnFloat($pricing))->toBe(2.0);
+});
+
+/**
+ * Language and screen class were recorded from 1.0 and rolled up from 1.2.
+ * Both are bounded — a short tag, and four buckets — so each adds a handful of
+ * rows per bucket rather than one per distinct value.
+ */
+it('materialises the language and screen class already recorded', function (): void {
+    seedClientEntry('2026-03-14 09:00:00', 'en-GB', ScreenClass::Large);
+    seedClientEntry('2026-03-14 09:05:00', 'en-GB', ScreenClass::Small);
+    seedClientEntry('2026-03-14 09:10:00', 'de', ScreenClass::Large);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Pageviews->value, 'language'))->toBe(3.0)
+        ->and(metricFor(Metric::Pageviews->value, 'screen_class'))->toBe(3.0);
+
+    $english = aggregates()
+        ->where('aggregate', 'language')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['language' => 'en-GB']))
+        ->value('value');
+
+    $large = aggregates()
+        ->where('aggregate', 'screen_class')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['screen_class' => ScreenClass::Large->value]))
+        ->value('value');
+
+    expect(columnFloat($english))->toBe(2.0)
+        ->and(columnFloat($large))->toBe(2.0);
 });
 
 /**

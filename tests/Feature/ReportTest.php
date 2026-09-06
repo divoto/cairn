@@ -516,7 +516,6 @@ it('refuses to group by a dimension that is not rolled up', function (Dimension 
     'url' => [Dimension::Url],
     'region' => [Dimension::Region],
     'city' => [Dimension::City],
-    'screen class' => [Dimension::ScreenClass],
 ]);
 
 it('refuses to filter by a dimension that is not rolled up', function (): void {

@@ -85,22 +85,29 @@ it('materialises a deliberately small set of dimensions', function (): void {
         static fn (Dimension $d): bool => $d->isMaterialised(),
     ));
 
-    expect($materialised)->toHaveCount(13)
+    expect($materialised)->toHaveCount(15)
         ->toContain(Dimension::Route)
         ->toContain(Dimension::Country)
         ->toContain(Dimension::EventName);
 });
 
 /**
- * Url, Region, City, Language and ScreenClass are recordable but not rolled
- * up. A report asking for them must throw rather than fall back to scanning
- * raw entries.
+ * Url, Region and City are recordable but not rolled up. A report asking for
+ * them must throw rather than fall back to scanning raw entries.
+ *
+ * Language and ScreenClass used to sit here too. Both are bounded — a short
+ * tag and four buckets — so rolling them up adds a predictable handful of rows
+ * per bucket rather than one per distinct value, which is what kept Url out.
  */
 it('does not materialise high-cardinality or sensitive dimensions', function (): void {
     expect(Dimension::Url->isMaterialised())->toBeFalse()
         ->and(Dimension::Region->isMaterialised())->toBeFalse()
-        ->and(Dimension::City->isMaterialised())->toBeFalse()
-        ->and(Dimension::ScreenClass->isMaterialised())->toBeFalse();
+        ->and(Dimension::City->isMaterialised())->toBeFalse();
+});
+
+it('materialises the two bounded dimensions the beacon and the headers give', function (): void {
+    expect(Dimension::Language->isMaterialised())->toBeTrue()
+        ->and(Dimension::ScreenClass->isMaterialised())->toBeTrue();
 });
 
 it('maps every dimension to a column', function (Dimension $dimension): void {
