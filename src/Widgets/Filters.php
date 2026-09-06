@@ -44,6 +44,7 @@ final readonly class Filters
         public ?string $channel = null,
         public ?string $language = null,
         public ?string $screenClass = null,
+        public ?string $entryPage = null,
     ) {}
 
     /**
@@ -64,6 +65,7 @@ final readonly class Filters
             channel: self::string($request, 'channel'),
             language: self::string($request, 'language'),
             screenClass: self::string($request, 'screen_class'),
+            entryPage: self::string($request, 'entry_url'),
         );
     }
 
@@ -147,6 +149,7 @@ final readonly class Filters
             'channel' => $this->channel,
             'language' => $this->language,
             'screen_class' => $this->screenClass,
+            'entry_url' => $this->entryPage,
         ] as $dimension => $value) {
             if ($value !== null) {
                 return [$dimension => $value];
@@ -202,6 +205,7 @@ final readonly class Filters
             channel: $dimension === 'channel' ? $value : null,
             language: $dimension === 'language' ? $value : null,
             screenClass: $dimension === 'screen_class' ? $value : null,
+            entryPage: $dimension === 'entry_url' ? $value : null,
         );
     }
 

@@ -9,6 +9,7 @@ use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Enums\ScreenClass;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
@@ -96,6 +97,35 @@ function seedVitalsEntry(string $at, ?int $lcpMs, ?int $inpMs, ?int $clsMilli): 
     )]);
 
     app(Storage::class)->store($collection);
+}
+
+/**
+ * Seed a closed session directly, so every expectation below is
+ * hand-calculable rather than derived from the resolver under test.
+ */
+function seedVisitSession(
+    string $startedAt,
+    string $entryUrl,
+    string $exitUrl,
+    int $pages,
+    bool $bounce,
+    int $seconds,
+): void {
+    $at = CarbonImmutable::parse($startedAt, 'UTC');
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    $connection->table(Tables::sessions())->insert([
+        'id' => Binary::bind($connection, random_bytes(8)),
+        'visitor' => Binary::bind($connection, random_bytes(16)),
+        'started_at' => $at->toDateTimeString(),
+        'last_activity_at' => $at->addSeconds($seconds)->toDateTimeString(),
+        'page_count' => $pages,
+        'duration_seconds' => $seconds,
+        'entry_url' => $entryUrl,
+        'exit_url' => $exitUrl,
+        'is_bounce' => $bounce,
+        'tenant_id' => '',
+    ]);
 }
 
 function metricFor(string $type, string $aggregate = 'overall'): float
@@ -392,6 +422,89 @@ it('counts a zero CLS as a measured, good sample', function (): void {
     expect(metricFor(Metric::ClsSamples->value))->toBe(1.0)
         ->and(metricFor(Metric::ClsGood->value))->toBe(1.0)
         ->and(metricFor(Metric::ClsMilli->value))->toBe(0.0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Session-sourced dimensions
+|--------------------------------------------------------------------------
+|
+| Landing and exit pages are columns on cairn_sessions, not on cairn_entries.
+| That is the whole point of them: sessions carry bounces and durations, so
+| these are the only dimensions that can report a bounce rate per value.
+|
+*/
+
+it('rolls up landing and exit pages from the session table', function (): void {
+    seedVisitSession('2026-03-14 09:00:00', '/pricing', '/checkout', pages: 3, bounce: false, seconds: 180);
+    seedVisitSession('2026-03-14 09:30:00', '/pricing', '/pricing', pages: 1, bounce: true, seconds: 0);
+    seedVisitSession('2026-03-14 10:00:00', '/docs', '/docs', pages: 1, bounce: true, seconds: 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Sessions->value, 'entry_url'))->toBe(3.0)
+        ->and(metricFor(Metric::Sessions->value, 'exit_url'))->toBe(3.0);
+
+    $pricing = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Sessions->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    $bounces = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Bounces->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    // Two visits began on /pricing and one of them bounced.
+    expect(columnFloat($pricing))->toBe(2.0)
+        ->and(columnFloat($bounces))->toBe(1.0);
+});
+
+/**
+ * Pageviews survives the crossing from one table to the other: the session
+ * row counts the pages in the visit, so the pageviews of a landing page is
+ * the sum of those counts rather than the site-wide figure wearing a label.
+ */
+it('sums the page count of the visits that began on a page', function (): void {
+    seedVisitSession('2026-03-14 09:00:00', '/pricing', '/checkout', pages: 3, bounce: false, seconds: 180);
+    seedVisitSession('2026-03-14 09:30:00', '/pricing', '/pricing', pages: 1, bounce: true, seconds: 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $pageviews = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    expect(columnFloat($pageviews))->toBe(4.0);
+});
+
+/**
+ * A visit that spans midnight belongs to the day it began, exactly as the
+ * site-wide session count does. Any other assignment stops the daily figures
+ * summing to the monthly one.
+ */
+it('attributes a landing page to the bucket the visit started in', function (): void {
+    seedVisitSession('2026-03-14 23:50:00', '/pricing', '/checkout', pages: 2, bounce: false, seconds: 1200);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-15 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Sessions->value, 'entry_url'))->toBe(0.0);
 });
 
 /**

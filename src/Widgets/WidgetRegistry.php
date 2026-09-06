@@ -12,6 +12,7 @@ use Divoto\Cairn\Widgets\Shipped\Conversions;
 use Divoto\Cairn\Widgets\Shipped\Countries;
 use Divoto\Cairn\Widgets\Shipped\Devices;
 use Divoto\Cairn\Widgets\Shipped\Events;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
 use Divoto\Cairn\Widgets\Shipped\Mediums;
 use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
@@ -68,6 +69,7 @@ final readonly class WidgetRegistry
         // A wide panel in the middle of the grid leaves a gap beside the panel
         // before it, because nothing narrow can be pulled up to fill the row.
         TopRoutes::class,
+        LandingPages::class,
         WebVitals::class,
         ActivityFeed::class,
     ];

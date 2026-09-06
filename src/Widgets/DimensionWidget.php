@@ -88,6 +88,7 @@ abstract class DimensionWidget extends Widget
                 Dimension::Channel,
                 Dimension::Language,
                 Dimension::ScreenClass,
+                Dimension::EntryPage,
             ],
             true,
         );

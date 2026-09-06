@@ -15,8 +15,11 @@ use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Facades\Cairn;
 use Divoto\Cairn\Reporting\Report;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\Filters;
+use Divoto\Cairn\Widgets\Shipped\ExitPages;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\Languages;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\ScreenSizes;
@@ -461,7 +464,7 @@ it('caps a filter value read from the URL', function (): void {
 */
 
 it('registers every shipped widget', function (): void {
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(16);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(17);
 });
 
 /**
@@ -479,7 +482,7 @@ it('falls back to the shipped widgets when config predates the key', function ()
         // No 'widgets' key, exactly as an older published config would have.
     ]);
 
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(16);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(17);
 
     cairnTest()->get('/cairn')->assertOk()->assertSee('Top routes');
 });
@@ -514,6 +517,137 @@ it('skips a widget class that cannot be resolved', function (): void {
     config()->set('cairn.dashboard.widgets', [TopRoutes::class, 'Divoto\Cairn\NotAWidget']);
 
     expect(app(WidgetRegistry::class)->all())->toHaveCount(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Landing and exit pages
+|--------------------------------------------------------------------------
+|
+| The first dimension measured from cairn_sessions rather than cairn_entries,
+| and therefore the first one that can report a bounce rate per value. In
+| 1.1.0 a session metric under any filter rendered as an em dash, because the
+| session table carried no dimension columns to narrow by. For these two it
+| does, and this section is where that reversal is pinned down.
+|
+*/
+
+/**
+ * Two visits begin on /pricing and one of them bounces; one begins on /docs
+ * and bounces. Every expectation below is that hand count.
+ */
+function seedVisits(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    foreach ([
+        ['/pricing', '/checkout', 3, false, 180],
+        ['/pricing', '/pricing', 1, true, 0],
+        ['/docs', '/docs', 1, true, 0],
+    ] as $index => [$entry, $exit, $pages, $bounce, $seconds]) {
+        $at = $today->addMinutes($index);
+
+        $connection->table(Tables::sessions())->insert([
+            'id' => Binary::bind($connection, random_bytes(8)),
+            'visitor' => Binary::bind($connection, random_bytes(16)),
+            'started_at' => $at->toDateTimeString(),
+            'last_activity_at' => $at->addSeconds($seconds)->toDateTimeString(),
+            'page_count' => $pages,
+            'duration_seconds' => $seconds,
+            'entry_url' => $entry,
+            'exit_url' => $exit,
+            'is_bounce' => $bounce,
+            'tenant_id' => '',
+        ]);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('renders the landing pages panel', function (): void {
+    seedVisits();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Landing pages')
+        ->assertSee('/pricing');
+});
+
+/**
+ * The acceptance criterion for the block: a bounce rate per page that matches
+ * a hand count of the session table. Two visits began on /pricing, one of them
+ * bounced, and the average duration is 180 seconds over the two.
+ */
+it('reports a bounce rate per landing page', function (): void {
+    seedVisits();
+
+    $row = app(LandingPages::class)->rows(new Filters(range: 'today'))->first();
+
+    expect($row?->dimension('entry_url'))->toBe('/pricing')
+        ->and($row?->metric(Metric::Sessions))->toBe(2.0)
+        ->and($row?->metric(Metric::BounceRate))->toBe(0.5)
+        ->and($row?->metric(Metric::AvgSessionDuration))->toBe(90.0);
+});
+
+/**
+ * The reversal. Under 1.1.0 every filter withheld sessions and bounce rate,
+ * because the session table carried nothing to narrow by and a site-wide
+ * figure wearing a filter's label is a lie. A landing page is a column on that
+ * table, so this is the first filter that can honestly narrow them.
+ */
+it('narrows the headline sessions and bounce rate to a landing page', function (): void {
+    seedVisits();
+
+    $row = app(Overview::class)->rows(new Filters(range: 'today', entryPage: '/pricing'))->first();
+
+    expect($row?->metric(Metric::Sessions))->toBe(2.0)
+        ->and($row?->metric(Metric::BounceRate))->toBe(0.5);
+});
+
+/**
+ * The other half of the same rule: a country filter still withholds them, and
+ * for the same reason it always did. Nothing about this block widened that.
+ */
+it('still withholds sessions from a filter measured on entries', function (): void {
+    seedTraffic();
+
+    expect(app(Overview::class)->rows(new Filters(range: 'today', country: 'GB'))
+        ->first()?->metric(Metric::Sessions))->toBeNull();
+});
+
+/**
+ * A landing page rollup carries no events, conversions or vitals — those are
+ * entry-derived and the session table never saw them. Asking for one under
+ * this filter must withhold it rather than answer site-wide.
+ */
+it('withholds an entry-derived metric under a landing page filter', function (): void {
+    seedVisits();
+
+    expect(Metric::Events->isMeasuredFor(Dimension::EntryPage))->toBeFalse()
+        ->and(Metric::AvgLcp->isMeasuredFor(Dimension::EntryPage))->toBeFalse()
+        // Pageviews survives: the session row counts the pages in the visit.
+        ->and(Metric::Pageviews->isMeasuredFor(Dimension::EntryPage))->toBeTrue();
+});
+
+it('links a landing page row to the filtered page', function (): void {
+    seedVisits();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('entry_url=%2Fpricing', escape: false);
+});
+
+it('renders the exit pages panel when it is enabled', function (): void {
+    seedVisits();
+
+    config()->set('cairn.dashboard.widgets', [ExitPages::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Exit pages')
+        ->assertSee('/checkout');
 });
 
 /*

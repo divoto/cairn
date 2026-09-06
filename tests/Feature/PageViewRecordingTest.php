@@ -340,7 +340,27 @@ it('records acquisition on the session, once, from the first page', function ():
     expect($session['channel'] ?? null)->toBe(Channel::Email->value)
         ->and($session['utm_source'] ?? null)->toBe('newsletter')
         ->and($session['referrer_host'] ?? null)->toBe('mastodon.social')
-        ->and($session['entry_url'] ?? null)->toContain('utm_source=newsletter');
+        // The campaign lives in its own columns, so the landing page is just
+        // the page. Keeping the query string here would split one landing
+        // page across every campaign that pointed at it.
+        ->and($session['entry_url'] ?? null)->toBe('/pricing');
+});
+
+/**
+ * A landing page has to aggregate to be worth reporting. Without collapsing,
+ * every order's invoice is its own landing page with one session against it.
+ */
+it('collapses identifiers in the landing and exit page', function (): void {
+    browse('/plain/8814');
+    browse('/plain/9921');
+
+    $session = (array) app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::sessions())
+        ->first();
+
+    expect($session['entry_url'] ?? null)->toBe('/plain/{id}')
+        ->and($session['exit_url'] ?? null)->toBe('/plain/{id}');
 });
 
 it('attaches every entry in a visit to the same session', function (): void {

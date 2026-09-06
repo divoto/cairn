@@ -482,7 +482,7 @@ final class Report
     {
         $narrowed = $this->narrowedDimension();
 
-        if (! $narrowed instanceof Dimension || $metric->isMeasuredPerDimension()) {
+        if (! $narrowed instanceof Dimension || $metric->isMeasuredFor($narrowed)) {
             return true;
         }
 

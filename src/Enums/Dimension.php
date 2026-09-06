@@ -54,6 +54,17 @@ enum Dimension: string
 
     case Language = 'language';
 
+    /**
+     * The page a visit started on, from `cairn_sessions`.
+     *
+     * Not a column on an entry: a landing page is a fact about a visit, and
+     * the session table is where bounces and durations live.
+     */
+    case EntryPage = 'entry_url';
+
+    /** The page a visit ended on, from `cairn_sessions`. */
+    case ExitPage = 'exit_url';
+
     /** The `name` column, when the entry is an event or a conversion. */
     case EventName = 'name';
 
@@ -63,6 +74,21 @@ enum Dimension: string
     public function column(): string
     {
         return $this->value;
+    }
+
+    /**
+     * Which table this dimension's rollup is measured from.
+     *
+     * Almost everything is a column on `cairn_entries`. Landing and exit pages
+     * are columns on `cairn_sessions` instead, which is what lets them report
+     * a bounce rate — a number the entry table cannot produce at all.
+     */
+    public function source(): DimensionSource
+    {
+        return match ($this) {
+            self::EntryPage, self::ExitPage => DimensionSource::Sessions,
+            default => DimensionSource::Entries,
+        };
     }
 
     /**
@@ -88,6 +114,8 @@ enum Dimension: string
             self::OperatingSystem,
             self::ScreenClass,
             self::Language,
+            self::EntryPage,
+            self::ExitPage,
             self::EventName => true,
             default => false,
         };
@@ -198,6 +226,8 @@ enum Dimension: string
             self::OperatingSystem => 'Operating system',
             self::ScreenClass => 'Screen size',
             self::Language => 'Language',
+            self::EntryPage => 'Landing page',
+            self::ExitPage => 'Exit page',
             self::EventName => 'Event',
         };
     }

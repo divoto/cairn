@@ -11,6 +11,7 @@ use Divoto\Cairn\Data\AggregateQuery;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\Dimension;
+use Divoto\Cairn\Enums\DimensionSource;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
@@ -211,7 +212,11 @@ final readonly class DatabaseStorage implements Storage
                     continue;
                 }
 
-                foreach ($this->measureBy($bucket, $end, $tenant, $dimension) as $value => $metrics) {
+                $measured = $dimension->source() === DimensionSource::Sessions
+                    ? $this->measureSessionsBy($bucket, $end, $tenant, $dimension)
+                    : $this->measureBy($bucket, $end, $tenant, $dimension);
+
+                foreach ($measured as $value => $metrics) {
                     foreach ($metrics as $metric => $amount) {
                         $rows[] = $this->aggregateRow(
                             $bucket,
@@ -279,6 +284,87 @@ final readonly class DatabaseStorage implements Storage
 
             if ($amount !== 0.0) {
                 $out[$metric->value] = $amount;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Measure one session-sourced dimension for a bucket.
+     *
+     * The sibling of {@see self::measureBy()} for landing and exit pages,
+     * which are columns on `cairn_sessions` rather than on `cairn_entries`.
+     * Grouping the session table by one of them gives what the entry table
+     * cannot: a bounce rate and an average duration for a single page.
+     *
+     * Sessions are attributed to the bucket they *started* in, exactly as the
+     * site-wide figure is. Any other assignment stops the daily counts summing
+     * to the monthly one.
+     *
+     * `page_count` is summed as pageviews. That is a real measurement rather
+     * than a borrowed one: the number of pages in the visits that began on
+     * this landing page.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function measureSessionsBy(
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $tenant,
+        Dimension $dimension,
+    ): array {
+        $column = $dimension->column();
+
+        $rows = $this->connection()
+            ->table(Tables::sessions())
+            ->where('tenant_id', $tenant)
+            ->where('started_at', '>=', $from->toDateTimeString())
+            ->where('started_at', '<', $to->toDateTimeString())
+            ->whereNotNull($column)
+            ->groupBy($column)
+            ->selectRaw($column.', '.implode(', ', [
+                'count(*) as m_sessions',
+                // Truthiness rather than `= 1`: is_bounce is a real boolean on
+                // PostgreSQL, where comparing it to an integer is a type error.
+                'sum(case when is_bounce then 1 else 0 end) as m_bounces',
+                'sum(coalesce(duration_seconds, 0)) as m_session_seconds',
+                'sum(coalesce(page_count, 0)) as m_pageviews',
+            ]))
+            ->get();
+
+        $map = [
+            'm_sessions' => Metric::Sessions,
+            'm_bounces' => Metric::Bounces,
+            'm_session_seconds' => Metric::SessionSeconds,
+            'm_pageviews' => Metric::Pageviews,
+        ];
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = (array) $row;
+            $value = $data[$column] ?? null;
+
+            // @codeCoverageIgnoreStart
+            // whereNotNull() above already excludes this at the SQL level.
+            if ($value === null) {
+                continue;
+            }
+            // @codeCoverageIgnoreEnd
+
+            $measurements = [];
+
+            foreach ($map as $select => $metric) {
+                $amount = is_numeric($data[$select] ?? null) ? (float) $data[$select] : 0.0;
+
+                if ($amount !== 0.0) {
+                    $measurements[$metric->value] = $amount;
+                }
+            }
+
+            if ($measurements !== []) {
+                $out[(string) (is_scalar($value) ? $value : '')] = $measurements;
             }
         }
 

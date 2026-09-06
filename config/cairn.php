@@ -16,6 +16,7 @@ use Divoto\Cairn\Widgets\Shipped\Conversions as ConversionsWidget;
 use Divoto\Cairn\Widgets\Shipped\Countries;
 use Divoto\Cairn\Widgets\Shipped\Devices;
 use Divoto\Cairn\Widgets\Shipped\Events;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
 use Divoto\Cairn\Widgets\Shipped\Mediums;
 use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
@@ -397,6 +398,7 @@ return [
         //
         //   Divoto\Cairn\Widgets\Shipped\Languages::class
         //   Divoto\Cairn\Widgets\Shipped\ScreenSizes::class  (needs the beacon)
+        //   Divoto\Cairn\Widgets\Shipped\ExitPages::class
         'widgets' => [
             Overview::class,
             LiveVisitors::class,
@@ -415,6 +417,7 @@ return [
             // Full-width panels last: one placed mid-grid leaves a gap beside
             // whatever narrow panel precedes it.
             TopRoutes::class,
+            LandingPages::class,
             WebVitals::class,
             ActivityFeed::class,
         ],

@@ -222,6 +222,42 @@ enum Metric: string
     }
 
     /**
+     * Whether this metric exists inside the rollup for one given dimension.
+     *
+     * {@see self::isMeasuredPerDimension()} answers this for the entry-sourced
+     * dimensions, which are almost all of them. Landing and exit pages are
+     * measured from `cairn_sessions` instead, so the answer inverts: sessions,
+     * bounces and duration are exactly what that rollup carries, and the
+     * entry-derived quantities — events, conversions, time on page, the Core
+     * Web Vitals — are what it cannot.
+     *
+     * Pageviews survives the crossing. The session table counts the pages in a
+     * visit, so the pageviews of a landing page is the sum of those counts:
+     * genuinely measured, rather than borrowed from the site-wide figure.
+     *
+     * Unique visitors are absent either way. The counter is keyed per day and
+     * per route as traffic arrives, and nothing else.
+     */
+    public function isMeasuredFor(Dimension $dimension): bool
+    {
+        $ratio = $this->ratio();
+
+        if ($ratio !== null) {
+            return $ratio['numerator']->isMeasuredFor($dimension)
+                && $ratio['denominator']->isMeasuredFor($dimension);
+        }
+
+        if ($dimension->source() === DimensionSource::Entries) {
+            return $this->isMeasuredPerDimension();
+        }
+
+        return match ($this) {
+            self::Sessions, self::Bounces, self::SessionSeconds, self::Pageviews => true,
+            default => false,
+        };
+    }
+
+    /**
      * Whether values of this metric are only measurable with the JS beacon.
      *
      * Widgets built on these render an explanatory empty state when the beacon
