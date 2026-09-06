@@ -65,15 +65,40 @@ enum Dimension: string
     /** The page a visit ended on, from `cairn_sessions`. */
     case ExitPage = 'exit_url';
 
+    /**
+     * The model an entry was recorded against.
+     *
+     * The only dimension without a single column behind it: it is the pair
+     * `subject_type` and `subject_id`, keyed as `{morph alias}:{id}` so that
+     * renaming a class does not orphan its history.
+     */
+    case Subject = 'subject';
+
     /** The `name` column, when the entry is an event or a conversion. */
     case EventName = 'name';
 
     /**
      * The column on `cairn_entries` this dimension reads from.
+     *
+     * Subject is the exception: it is measured from two columns rather than
+     * one, and storage branches for it rather than asking here.
+     * {@see self::isComposite()}
      */
     public function column(): string
     {
         return $this->value;
+    }
+
+    /**
+     * Whether this dimension is built from more than one column.
+     *
+     * Only Subject, which is `subject_type` and `subject_id` combined into a
+     * single key. Keeping the exception named means the generic grouping path
+     * stays untouched by it.
+     */
+    public function isComposite(): bool
+    {
+        return $this === self::Subject;
     }
 
     /**
@@ -116,6 +141,7 @@ enum Dimension: string
             self::Language,
             self::EntryPage,
             self::ExitPage,
+            self::Subject,
             self::EventName => true,
             default => false,
         };
@@ -228,6 +254,7 @@ enum Dimension: string
             self::Language => 'Language',
             self::EntryPage => 'Landing page',
             self::ExitPage => 'Exit page',
+            self::Subject => 'Content',
             self::EventName => 'Event',
         };
     }

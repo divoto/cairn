@@ -85,7 +85,7 @@ it('materialises a deliberately small set of dimensions', function (): void {
         static fn (Dimension $d): bool => $d->isMaterialised(),
     ));
 
-    expect($materialised)->toHaveCount(17)
+    expect($materialised)->toHaveCount(18)
         ->toContain(Dimension::Route)
         ->toContain(Dimension::Country)
         ->toContain(Dimension::EventName);

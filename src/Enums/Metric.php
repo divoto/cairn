@@ -247,6 +247,16 @@ enum Metric: string
                 && $ratio['denominator']->isMeasuredFor($dimension);
         }
 
+        // Subject is measured from entries, but only for the four quantities
+        // a model can actually carry: it never reaches a pageview, and nothing
+        // beacon-measured is attributed to a model.
+        if ($dimension === Dimension::Subject) {
+            return match ($this) {
+                self::Pageviews, self::Events, self::Conversions, self::ConversionValue => true,
+                default => false,
+            };
+        }
+
         if ($dimension->source() === DimensionSource::Entries) {
             return $this->isMeasuredPerDimension();
         }

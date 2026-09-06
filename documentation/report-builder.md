@@ -155,10 +155,53 @@ is asked as `groupBy(Route)->filter(Country, 'DE')` or as two filters at once.
 ## Materialised dimensions
 
 Route · Referrer host · Channel · UTM source/medium/campaign/term/content ·
-Country · Device type · Browser · Operating system · Event name
+Country · Device type · Browser · Operating system · Language · Screen class ·
+Landing page · Exit page · Content · Event name
 
 Adding one means every rollup writes more rows for every bucket, forever, so
 the list is deliberately short.
+
+Most of them are columns on `cairn_entries`. Three are not:
+
+**Landing page and exit page** are columns on `cairn_sessions`, which is what
+lets them report a bounce rate and an average duration per value — numbers the
+entry table cannot produce for any other dimension. What they cannot report is
+anything entry-derived: events, conversions, time on page, the Core Web Vitals.
+Identifiers in both are collapsed at write time (`/orders/{id}/invoice`), and
+the query string is dropped, since campaigns have columns of their own.
+
+**Content** is the model an entry was recorded against, keyed as
+`{morph alias}:{id}`:
+
+```php
+Cairn::report()
+    ->metrics(Metric::Pageviews)
+    ->groupBy(Dimension::Subject)
+    ->orderByDesc(Metric::Pageviews)
+    ->get();
+```
+
+The morph alias rather than the class name, so renaming a class does not orphan
+its history — **provided the alias is registered in a morph map**. Without one,
+`getMorphClass()` returns the class name and a rename does strand the old rows.
+
+A subject never reaches a pageview: `trackView()`, `trackEvent()` and
+`trackConversion()` all record events or conversions. So for this dimension
+`Pageviews` counts views and `Events` counts everything else, which keeps an
+article's event count from silently including its views.
+
+### Reading a model's own numbers
+
+```php
+$article->views();                 // last 30 days
+$article->views(7);
+$article->analyticsEvents();       // events other than views
+$article->analyticsConversions();
+```
+
+Each reads the rollup, never raw entries. There is no per-event-name variant:
+that would be a subject *and* an event name, and only one dimension is
+materialised at a time — the builder would throw rather than quietly scan.
 
 ## Tenancy
 

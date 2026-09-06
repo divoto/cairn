@@ -12,6 +12,8 @@ use Divoto\Cairn\Support\Tables;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Throwable;
 
 /**
@@ -44,6 +46,7 @@ final readonly class Doctor
         return array_values(array_filter([
             $this->durableIdentity(),
             $this->userTracking(),
+            $this->subjectIsUser(),
             $this->geoPrecision(),
             $this->geoDatabase(),
             $this->routeGrouping(),
@@ -94,6 +97,79 @@ final readonly class Doctor
             .'cairn:forget and cairn:export are there to service those.',
             'cairn.privacy.track_user_id',
         );
+    }
+
+    /**
+     * Views tracked on the application's own user model.
+     *
+     * `trackView()` on a User puts user ids into aggregate keys, which is the
+     * one way the Top content panel turns a table of content into a record
+     * about people — and aggregates are the part of Cairn that is meant to
+     * outlive raw retention.
+     */
+    private function subjectIsUser(): ?Finding
+    {
+        $user = $this->userModel();
+
+        if ($user === null || ! $this->hasSubjectType($user)) {
+            return null;
+        }
+
+        return new Finding(
+            'Views are recorded against your user model',
+            'Entries carry '.$user.' as a subject, so its ids appear in aggregate keys '
+            .'and on the Top content panel. Aggregates are kept far longer than raw '
+            .'entries and are not covered by cairn:forget, so this is a record of what '
+            .'individual people did that outlives the retention window. Tracking views '
+            .'of content is what this feature is for; tracking views of people is a '
+            .'different thing to have decided on purpose.',
+            'HasAnalytics on '.$user,
+            severe: true,
+        );
+    }
+
+    /**
+     * The application's configured authentication model, if it has one.
+     */
+    private function userModel(): ?string
+    {
+        $guard = $this->config->get('auth.defaults.guard');
+        $provider = is_string($guard) ? $this->config->get('auth.guards.'.$guard.'.provider') : null;
+        $model = is_string($provider) ? $this->config->get('auth.providers.'.$provider.'.model') : null;
+
+        return is_string($model) && $model !== '' ? $model : null;
+    }
+
+    /**
+     * Whether any entry was recorded against a given class.
+     *
+     * Matched against the morph alias as well as the class name, since that is
+     * what a subject is stored as when a morph map is registered.
+     */
+    private function hasSubjectType(string $class): bool
+    {
+        $alias = array_search($class, Relation::morphMap(), true);
+
+        $types = array_values(array_unique(array_filter(
+            [$class, is_string($alias) ? $alias : null],
+            static fn (?string $value): bool => $value !== null,
+        )));
+
+        try {
+            return $this->app->make(DatabaseManager::class)
+                ->connection(Tables::connection())
+                ->table(Tables::entries())
+                ->whereIn('subject_type', $types)
+                ->exists();
+            // @codeCoverageIgnoreStart
+            // A doctor that cannot reach the database has nothing to say about
+            // what is in it, and must not take the command down saying so.
+        } catch (Throwable $e) {
+            report($e);
+
+            return false;
+        }
+        // @codeCoverageIgnoreEnd
     }
 
     /**

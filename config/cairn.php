@@ -23,6 +23,7 @@ use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\Referrers;
 use Divoto\Cairn\Widgets\Shipped\Sources;
+use Divoto\Cairn\Widgets\Shipped\TopContent;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 use Divoto\Cairn\Widgets\Shipped\WebVitals;
 
@@ -418,6 +419,7 @@ return [
             // whatever narrow panel precedes it.
             TopRoutes::class,
             LandingPages::class,
+            TopContent::class,
             WebVitals::class,
             ActivityFeed::class,
         ],

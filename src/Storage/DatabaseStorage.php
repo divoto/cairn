@@ -18,6 +18,7 @@ use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Buckets;
 use Divoto\Cairn\Support\EntryMapper;
+use Divoto\Cairn\Support\SubjectKey;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -212,9 +213,11 @@ final readonly class DatabaseStorage implements Storage
                     continue;
                 }
 
-                $measured = $dimension->source() === DimensionSource::Sessions
-                    ? $this->measureSessionsBy($bucket, $end, $tenant, $dimension)
-                    : $this->measureBy($bucket, $end, $tenant, $dimension);
+                $measured = match (true) {
+                    $dimension->source() === DimensionSource::Sessions => $this->measureSessionsBy($bucket, $end, $tenant, $dimension),
+                    $dimension->isComposite() => $this->measureSubjects($bucket, $end, $tenant),
+                    default => $this->measureBy($bucket, $end, $tenant, $dimension),
+                };
 
                 foreach ($measured as $value => $metrics) {
                     foreach ($metrics as $metric => $amount) {
@@ -284,6 +287,89 @@ final readonly class DatabaseStorage implements Storage
 
             if ($amount !== 0.0) {
                 $out[$metric->value] = $amount;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Measure the subject dimension for a bucket.
+     *
+     * The one dimension keyed from two columns, so it gets its own small
+     * branch rather than bending {@see self::measureBy()} out of shape.
+     *
+     * A subject only ever reaches an entry through `trackView()`,
+     * `trackEvent()` or `trackConversion()`, all of which record an event or a
+     * conversion — never a pageview. So the pageview count of an article would
+     * always be zero, which is useless, and its event count would silently
+     * include its views, which is worse.
+     *
+     * Views are therefore counted as this dimension's pageviews, and the event
+     * count excludes them. "Viewed" is Cairn's own vocabulary rather than
+     * something a caller chose, which is what entitles storage to read it:
+     * {@see SubjectKey::VIEW_EVENT}.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function measureSubjects(
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $tenant,
+    ): array {
+        $event = "'".EntryType::Event->value."'";
+        $conversion = "'".EntryType::Conversion->value."'";
+        $viewed = "'".SubjectKey::VIEW_EVENT."'";
+
+        $rows = $this->entriesIn($from, $to, $tenant)
+            ->whereNotNull('subject_type')
+            ->whereNotNull('subject_id')
+            ->groupBy('subject_type', 'subject_id')
+            ->selectRaw('subject_type, subject_id, '.implode(', ', [
+                "sum(case when type = {$event} and name = {$viewed} then 1 else 0 end) as m_views",
+                "sum(case when type = {$event} and name <> {$viewed} then 1 else 0 end) as m_events",
+                "sum(case when type = {$conversion} then 1 else 0 end) as m_conversions",
+                "sum(case when type = {$conversion} then coalesce(value, 0) else 0 end) as m_conversion_value",
+            ]))
+            ->get();
+
+        $map = [
+            'm_views' => Metric::Pageviews,
+            'm_events' => Metric::Events,
+            'm_conversions' => Metric::Conversions,
+            'm_conversion_value' => Metric::ConversionValue,
+        ];
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = (array) $row;
+            $type = $data['subject_type'] ?? null;
+            $id = $data['subject_id'] ?? null;
+
+            // @codeCoverageIgnoreStart
+            // Both are excluded at the SQL level by whereNotNull() above.
+            if (! is_string($type)) {
+                continue;
+            }
+
+            if (! is_string($id) && ! is_int($id)) {
+                continue;
+            }
+            // @codeCoverageIgnoreEnd
+
+            $measurements = [];
+
+            foreach ($map as $select => $metric) {
+                $amount = is_numeric($data[$select] ?? null) ? (float) $data[$select] : 0.0;
+
+                if ($amount !== 0.0) {
+                    $measurements[$metric->value] = $amount;
+                }
+            }
+
+            if ($measurements !== []) {
+                $out[SubjectKey::for($type, $id)] = $measurements;
             }
         }
 
