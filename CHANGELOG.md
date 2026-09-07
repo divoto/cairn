@@ -14,9 +14,10 @@ release.
 
 ## [1.2.0] - 2026-09-06
 
-Four things Cairn already recorded and never showed. Every one of them is a
-rollup and a panel on top of data that was being collected before this
-release; nothing new is asked of a visitor anywhere in it.
+Four things Cairn already recorded and never showed, and one check that
+follows from them. Every panel here is a rollup on top of data that was being
+collected before this release; nothing new is asked of a visitor anywhere in
+it.
 
 ### Added
 
@@ -34,8 +35,10 @@ release; nothing new is asked of a visitor anywhere in it.
   fields and dropped these. They are now stored and reported per route, led by
   the share of page views that met Google's thresholds — an average hides its
   own tail, and one slow render in ten is exactly the experience worth knowing
-  about. The three browser observers are Chromium-only, so a Firefox or Safari
-  visit contributes no samples rather than a row of misleading zeroes.
+  about. Only Chromium has all three observers; a browser missing one
+  contributes no sample for that vital rather than a misleading zero, which
+  matters most for CLS, where zero is the best score rather than the absence
+  of one.
 
 - **Landing and exit pages.** The first dimensions measured from
   `cairn_sessions` rather than `cairn_entries`, and therefore the first that
@@ -105,16 +108,18 @@ php artisan cairn:rollup --from=2026-08-07 --to=2026-09-06 --period=all
 
 `--period=all` rebuilds the hour, day and month buckets, which is what the
 dashboard's ranges read; the default of `day` alone would leave the "Today"
-and "Last 12 months" views without the new panels. Without this step entirely,
-the new panels are correct but empty until traffic accumulates. How far back it is worth going is bounded by
-`cairn.retention.entries` — the rollup can only aggregate raw entries that have
-not been pruned. Core Web Vitals are the exception either way: nothing before
-the upgrade stored them, so that panel fills from now on regardless.
+and "Last 12 months" views without the new panels. Skip the step and the new
+panels are still correct, only empty until traffic accumulates. How far back
+it is worth going is bounded by `cairn.retention.entries` — the rollup can
+only aggregate raw entries that have not been pruned. Core Web Vitals are the
+exception either way: nothing before the upgrade stored them, so that panel
+fills from now on regardless.
 
 If you have published `config/cairn.php` **with a `dashboard.widgets` list**,
-the three new default panels — Web vitals, Landing pages and Top content — will
-not appear until you add them to it. That list is yours and Cairn will not add
-to it; every other new setting fills in on its own, as described under Changed.
+the three new default panels — Web vitals, Landing pages and Top content —
+will not appear until you add them to it. That list is yours and Cairn will
+not add to it; every other new setting fills in on its own, as described under
+Changed.
 
 If you ran `config:cache` before upgrading, run it again. A cached
 configuration skips the merge entirely, so it is still the array your previous

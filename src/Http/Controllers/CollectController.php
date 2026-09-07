@@ -242,19 +242,24 @@ final readonly class CollectController
      * worth keeping, and a beacon cached from an earlier release sends these
      * fields with nothing in them.
      *
-     * **LCP decides whether any of them were measured.** The three observers
-     * are Chromium-only, and the beacon initialises all three to zero, so a
-     * visitor on Firefox or Safari submits `lcp: 0, inp: 0, cls: 0` — which is
-     * indistinguishable, field by field, from a Chromium page that painted
-     * instantly, was never clicked and never shifted.
+     * **LCP decides whether any of them were measured.** The beacon initialises
+     * the values to zero, so a browser with no performance observers at all
+     * submits `lcp: 0, inp: 0, cls: 0` — which is indistinguishable, field by
+     * field, from a page that painted instantly, was never clicked and never
+     * shifted.
      *
      * That ambiguity only matters for CLS, where zero is the *best* possible
-     * score rather than a missing one. Treating every non-Chromium visit as a
-     * perfect CLS would swamp the good-share with scores nobody measured, and
-     * dropping every genuine zero would do the opposite. LCP breaks the tie:
-     * it is non-zero whenever the observers ran at all, so a zero CLS beside a
-     * real LCP is a page that truly did not shift, and a zero CLS on its own is
-     * a browser that was not watching.
+     * score rather than a missing one. Treating every such visit as a perfect
+     * CLS would swamp the good-share with scores nobody measured, and dropping
+     * every genuine zero would do the opposite. LCP breaks the tie: it is
+     * non-zero whenever the observers ran at all, so a zero CLS beside a real
+     * LCP is a page that truly did not shift, and a zero CLS on its own is a
+     * browser that was not watching.
+     *
+     * Only Chromium has all three observers. Firefox and Safari report LCP
+     * without layout shift, so the beacon sends `cls: null` wherever that
+     * observer is missing, and a null here stays null rather than becoming a
+     * perfect score.
      *
      * INP needs no such rule. Zero there means nobody interacted, which is
      * genuinely nothing to report either way.

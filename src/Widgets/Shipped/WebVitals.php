@@ -47,7 +47,7 @@ final class WebVitals extends DimensionWidget
     /**
      * Drop the routes nothing measured.
      *
-     * The vitals observers are Chromium-only and the beacon is optional, so on
+     * The beacon is optional and not every browser has every observer, so on
      * most installations some routes have samples and some have none. A route
      * with no samples renders as a row of em dashes, which takes up as much
      * space as a real answer while saying nothing.

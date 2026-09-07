@@ -250,6 +250,23 @@ it('keeps a zero CLS as the good score it is', function (): void {
 });
 
 /**
+ * Firefox and Safari report LCP but have no layout-shift observer, so the
+ * beacon sends CLS as null from them. A real LCP beside it must not turn that
+ * absence into a perfect score.
+ */
+it('keeps CLS absent when the browser measured LCP but not layout shift', function (): void {
+    recordPageview();
+
+    postBeacon(['url' => '/pricing', 'seconds' => 42, 'lcp' => 1200, 'inp' => 40, 'cls' => null])
+        ->assertNoContent();
+
+    $row = (array) beaconEntries()->first();
+
+    expect($row['lcp_ms'] ?? null)->toBe(1200)
+        ->and($row['cls_milli'] ?? null)->toBeNull();
+});
+
+/**
  * A CLS that is not a number at all — a string from a hand-rolled client, or a
  * field the browser filled with something unexpected — is dropped on its own.
  * The LCP measured in the same submission is still worth keeping.
