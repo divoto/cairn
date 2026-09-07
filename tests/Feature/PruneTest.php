@@ -50,10 +50,14 @@ final class FakePartitionConnection extends Connection
     }
 
     /**
+     * Laravel 13 added `$fetchUsing`; declaring it keeps this fake compatible
+     * with both the 12 and the 13 signature.
+     *
      * @param  array<int, mixed>  $bindings
+     * @param  array<int, mixed>  $fetchUsing
      * @return list<array<string, string>>
      */
-    public function select($query, $bindings = [], $useReadPdo = true): array
+    public function select($query, $bindings = [], $useReadPdo = true, array $fetchUsing = []): array
     {
         if ($this->selectThrows instanceof Throwable) {
             throw $this->selectThrows;
