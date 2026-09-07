@@ -172,3 +172,19 @@ function anEntry(
         properties: $properties,
     );
 }
+
+/**
+ * Make every Cairn table unreachable for the rest of the test.
+ *
+ * The failure-containment tests need storage to be gone. Dropping a table is
+ * the literal way, but DROP TABLE is DDL, and MySQL and MariaDB commit the
+ * enclosing transaction implicitly when they run it — which takes
+ * RefreshDatabase's savepoints with it and fails every later test in the file
+ * with "SAVEPOINT does not exist". Pointing the prefix at tables that were
+ * never created fails every query the same way, on every engine, without
+ * touching the schema.
+ */
+function cairnStorageGone(): void
+{
+    config()->set('cairn.table_prefix', 'gone_');
+}

@@ -17,11 +17,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 
 uses(RefreshDatabase::class);
 
@@ -33,7 +31,7 @@ final class Article extends Model
 {
     use HasAnalytics;
 
-    protected $table = 'articles';
+    protected $table = 'cairn_test_articles';
 
     protected $guarded = [];
 
@@ -47,7 +45,7 @@ final class LabelledArticle extends Model
 {
     use HasAnalytics;
 
-    protected $table = 'articles';
+    protected $table = 'cairn_test_articles';
 
     protected $guarded = [];
 
@@ -75,7 +73,7 @@ final class Tableless extends Model
  */
 final class Keyless extends Model
 {
-    protected $table = 'articles';
+    protected $table = 'cairn_test_articles';
 
     public $timestamps = false;
 
@@ -85,12 +83,10 @@ final class Keyless extends Model
     }
 }
 
+// The `cairn_test_articles` table the models above live in comes from the fixture
+// migration in tests/Fixtures/migrations, so it exists outside the transaction
+// each test runs in.
 beforeEach(function (): void {
-    Schema::create('articles', function (Blueprint $table): void {
-        $table->id();
-        $table->string('title');
-    });
-
     Route::middleware('web')->get('/articles/{article}', function (string $article): string {
         Article::query()->findOrFail($article)->trackView();
 
@@ -180,7 +176,7 @@ it('records a polymorphic subject for a model', function (): void {
     $row = (array) articleEntries()->first();
 
     expect($row['subject_type'] ?? null)->toBe(Article::class)
-        ->and($row['subject_id'] ?? null)->toBe('1')
+        ->and($row['subject_id'] ?? null)->toBe(articleKey($article))
         ->and($row['name'] ?? null)->toBe('viewed');
 });
 
@@ -257,7 +253,7 @@ it('records nothing for a model when Cairn is disabled', function (): void {
 it('does not break the response when analytics storage is gone', function (): void {
     $article = Article::query()->create(['title' => 'Cairn']);
 
-    Schema::connection(Tables::connection())->drop(Tables::entries());
+    cairnStorageGone();
 
     cairnTest()->withHeaders(['User-Agent' => 'Mozilla/5.0 Chrome/122.0.0.0 Safari/537.36'])
         ->get('/articles/'.articleKey($article))
@@ -402,7 +398,7 @@ it('resolves labels with one query per subject type', function (): void {
     $queries = 0;
 
     DB::listen(function (QueryExecuted $query) use (&$queries): void {
-        if (str_contains($query->sql, '"articles"') || str_contains($query->sql, '`articles`')) {
+        if (str_contains($query->sql, '"cairn_test_articles"') || str_contains($query->sql, '`cairn_test_articles`')) {
             $queries++;
         }
     });

@@ -12,10 +12,11 @@ use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -502,7 +503,7 @@ it('lets a controller opt a request out at runtime', function (): void {
  * Project rule: never let a Cairn failure break the host application's request.
  */
 it('serves the response normally when Cairn storage is gone', function (): void {
-    Schema::connection(Tables::connection())->drop(Tables::entries());
+    cairnStorageGone();
 
     browse('/pricing')->assertOk()->assertSee('ok');
 });
@@ -515,9 +516,14 @@ it('serves the response normally when Cairn storage is gone', function (): void 
  * outer guard, not any inner one.
  */
 it('serves the response normally when the session cannot be resolved', function (): void {
-    Schema::connection(Tables::connection())->drop(Tables::sessions());
+    Exceptions::fake();
+    cairnStorageGone();
 
     browse('/pricing')->assertOk()->assertSee('ok');
+
+    // It was the outer guard that answered: the failure it reported is the
+    // session resolver's, which nothing inside the middleware swallowed.
+    Exceptions::assertReported(fn (QueryException $e): bool => str_contains($e->getMessage(), Tables::sessions()));
 });
 
 /**

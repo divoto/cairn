@@ -12,6 +12,7 @@ use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Recording\EntryFactory;
 use Divoto\Cairn\Support\SubjectKey;
 use Illuminate\Database\Eloquent\Model;
+use Throwable;
 
 /**
  * Lets an Eloquent model record its own analytics.
@@ -153,26 +154,34 @@ trait HasAnalytics
      */
     private function trackAnalytics(EntryType $type, string $name, array $properties, ?string $value = null): void
     {
-        $cairn = app(Cairn::class);
-        $request = request();
+        // Project rule: a Cairn failure never becomes the host application's.
+        // The middleware guards its own work after the response has gone out;
+        // a model event fires inside the host's own request, where building
+        // the entry already touches the session table, so it guards itself.
+        try {
+            $cairn = app(Cairn::class);
+            $request = request();
 
-        // The gate is consulted here as it is everywhere else: a model event
-        // triggered during a request the visitor asked not to have measured is
-        // still that visitor's request.
-        if ($cairn->decide($request) !== null) {
-            return;
+            // The gate is consulted here as it is everywhere else: a model
+            // event triggered during a request the visitor asked not to have
+            // measured is still that visitor's request.
+            if ($cairn->decide($request) !== null) {
+                return;
+            }
+
+            $key = $this->getKey();
+
+            $cairn->record(app(EntryFactory::class)->named(
+                $request,
+                $type,
+                $name,
+                $properties === [] ? null : $properties,
+                $value,
+                $this->analyticsType(),
+                is_int($key) || is_string($key) ? $key : null,
+            ));
+        } catch (Throwable $e) {
+            report($e);
         }
-
-        $key = $this->getKey();
-
-        $cairn->record(app(EntryFactory::class)->named(
-            $request,
-            $type,
-            $name,
-            $properties === [] ? null : $properties,
-            $value,
-            $this->analyticsType(),
-            is_int($key) || is_string($key) ? $key : null,
-        ));
     }
 }

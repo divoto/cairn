@@ -61,6 +61,10 @@ it('continues an existing session within the inactivity window', function (): vo
  * string: a plain integer written into it is stored, and read back, as one.
  * This is what that looks like arriving from the database, however it got
  * there — treated as no open session rather than trusted half-parsed.
+ *
+ * Only SQLite can stage this. PostgreSQL rejects the integer outright and
+ * MySQL coerces it into a valid datetime, so on both the resolver never sees
+ * anything but a string.
  */
 it('treats an existing session as absent if its timestamp did not come back as a string', function (): void {
     $visitor = random_bytes(16);
@@ -74,7 +78,7 @@ it('treats an existing session as absent if its timestamp did not come back as a
     $second = sessions()->resolve($visitor, $start->addMinutes(5));
 
     expect($second->isNew)->toBeTrue();
-});
+})->skip(fn (): bool => Tables::driver() !== 'sqlite', 'Only SQLite stores a non-string in a datetime column.');
 
 it('starts a new session once the inactivity window has passed', function (): void {
     $visitor = random_bytes(16);

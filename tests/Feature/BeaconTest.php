@@ -12,7 +12,6 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -367,7 +366,7 @@ it('rejects a submission once the visitor has exceeded the rate limit', function
 it('answers 204 even when collecting the measurement throws', function (): void {
     recordPageview();
 
-    Schema::connection(Tables::connection())->dropIfExists(Tables::entries());
+    cairnStorageGone();
 
     postBeacon(['url' => '/pricing', 'seconds' => 42])->assertNoContent();
 });

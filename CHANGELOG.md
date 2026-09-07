@@ -78,6 +78,16 @@ release; nothing new is asked of a visitor anywhere in it.
   landing page across every campaign that pointed at it. Rows written before
   this upgrade are left as they are and age out with retention.
 
+### Fixed
+
+- **A model event no longer fails the host's request.** `trackView()`,
+  `trackEvent()` and `trackConversion()` build their entry inside the host
+  application's own request, and building one reads the session table. With
+  Cairn's storage unreachable that read threw straight into the page, where
+  the pageview middleware, running after the response has gone out, would
+  have contained it. The trait now guards itself the same way: the failure
+  is reported and the page is served.
+
 ### Upgrading
 
 Run the migration, which adds three nullable columns to `cairn_entries`:
