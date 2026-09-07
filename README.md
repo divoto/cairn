@@ -234,6 +234,10 @@ php artisan vendor:publish --tag=cairn-config
 Every option is commented. The two above carry a longer explanation of what
 they change.
 
+The optional beacon, which measures time on page, scroll depth, screen size
+and Core Web Vitals, is placed with the `@cairn` directive in your layout —
+see [the installation guide](documentation/installation.md#optional-the-beacon).
+
 Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
 `cairn-assets`, `cairn-privacy`, `cairn-inertia`, `cairn-pulse-views`.
 

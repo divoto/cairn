@@ -112,6 +112,26 @@ The setting applies from the moment you change it. Entries already recorded keep
 the grouping they were recorded with, so a switch shows up as old rows staying
 put and new ones appearing beside them.
 
+## Optional: the beacon
+
+Time on page, scroll depth, screen size and Core Web Vitals are measured in
+the browser, by a small script the server cannot stand in for. Place it in
+your layout, before `</body>`:
+
+```blade
+@cairn
+```
+
+It renders an inline `<script>` of under two kilobytes, or nothing at all
+while the `ClientMetrics` recorder is disabled, so a layout can carry it
+unconditionally. The script posts one measurement per page to `cairn/collect`
+and reads no cookies. Under a `script-src` Content Security Policy, allow it
+by hash: `Divoto\Cairn\Support\Beacon::cspHash()` returns the value for the
+header.
+
+Without it the dashboard still works. The panels that read these measurements
+show an explanatory empty state rather than a zero.
+
 ## Optional: Redis
 
 ```env

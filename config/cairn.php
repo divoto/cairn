@@ -358,9 +358,10 @@ return [
             // pages and one fewer endpoint accepting input from browsers.
             'enabled' => true,
 
-            // Emit the <script> tag automatically on Blade responses. With
-            // this false you can still place it yourself with the @cairn
-            // directive — useful if you want it only on some pages.
+            // The tag is placed with the @cairn directive, before </body> in
+            // your layout. Automatic injection into every Blade response is
+            // not available yet; this switch is reserved for it and is read
+            // by nothing.
             'auto_inject' => false,
         ],
 

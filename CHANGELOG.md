@@ -12,7 +12,7 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
-## [1.2.0] - 2026-09-06
+## [1.2.0] - 2026-09-07
 
 Four things Cairn already recorded and never showed, and one check that
 follows from them. Every panel here is a rollup on top of data that was being
@@ -81,6 +81,10 @@ it.
   landing page across every campaign that pointed at it. Rows written before
   this upgrade are left as they are and age out with retention.
 
+- **Tested on PHP 8.5.** The suite now runs on PHP 8.2 through 8.5 against
+  Laravel 12 and 13, at both the lowest and the highest dependency versions
+  the package allows.
+
 ### Fixed
 
 - **A model event no longer fails the host's request.** `trackView()`,
@@ -90,6 +94,12 @@ it.
   the pageview middleware, running after the response has gone out, would
   have contained it. The trait now guards itself the same way: the failure
   is reported and the page is served.
+
+- **Placing the beacon is documented.** The only mention of the `@cairn`
+  directive was a comment in the config file, which also described an
+  `auto_inject` switch that nothing reads. The installation guide now shows
+  where the tag goes, and the comment says what the switch is: reserved, and
+  not yet wired to anything.
 
 ### Upgrading
 
@@ -440,6 +450,10 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[1.2.0]: https://github.com/divoto/cairn/releases/tag/v1.2.0
+
+[1.1.0]: https://github.com/divoto/cairn/releases/tag/v1.1.0
 
 [1.0.0]: https://github.com/divoto/cairn/releases/tag/v1.0.0
 
