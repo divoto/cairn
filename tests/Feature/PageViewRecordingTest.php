@@ -12,10 +12,11 @@ use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -340,7 +341,27 @@ it('records acquisition on the session, once, from the first page', function ():
     expect($session['channel'] ?? null)->toBe(Channel::Email->value)
         ->and($session['utm_source'] ?? null)->toBe('newsletter')
         ->and($session['referrer_host'] ?? null)->toBe('mastodon.social')
-        ->and($session['entry_url'] ?? null)->toContain('utm_source=newsletter');
+        // The campaign lives in its own columns, so the landing page is just
+        // the page. Keeping the query string here would split one landing
+        // page across every campaign that pointed at it.
+        ->and($session['entry_url'] ?? null)->toBe('/pricing');
+});
+
+/**
+ * A landing page has to aggregate to be worth reporting. Without collapsing,
+ * every order's invoice is its own landing page with one session against it.
+ */
+it('collapses identifiers in the landing and exit page', function (): void {
+    browse('/plain/8814');
+    browse('/plain/9921');
+
+    $session = (array) app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::sessions())
+        ->first();
+
+    expect($session['entry_url'] ?? null)->toBe('/plain/{id}')
+        ->and($session['exit_url'] ?? null)->toBe('/plain/{id}');
 });
 
 it('attaches every entry in a visit to the same session', function (): void {
@@ -482,7 +503,7 @@ it('lets a controller opt a request out at runtime', function (): void {
  * Project rule: never let a Cairn failure break the host application's request.
  */
 it('serves the response normally when Cairn storage is gone', function (): void {
-    Schema::connection(Tables::connection())->drop(Tables::entries());
+    cairnStorageGone();
 
     browse('/pricing')->assertOk()->assertSee('ok');
 });
@@ -495,9 +516,14 @@ it('serves the response normally when Cairn storage is gone', function (): void 
  * outer guard, not any inner one.
  */
 it('serves the response normally when the session cannot be resolved', function (): void {
-    Schema::connection(Tables::connection())->drop(Tables::sessions());
+    Exceptions::fake();
+    cairnStorageGone();
 
     browse('/pricing')->assertOk()->assertSee('ok');
+
+    // It was the outer guard that answered: the failure it reported is the
+    // session resolver's, which nothing inside the middleware swallowed.
+    Exceptions::assertReported(fn (QueryException $e): bool => str_contains($e->getMessage(), Tables::sessions()));
 });
 
 /**

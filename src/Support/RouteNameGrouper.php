@@ -56,11 +56,11 @@ final readonly class RouteNameGrouper
         $route = $request->route();
 
         return match ($this->grouping) {
-            RouteGrouping::Path => $this->collapse($request->path()),
-            RouteGrouping::Uri => $this->pattern($route) ?? $this->collapse($request->path()),
+            RouteGrouping::Path => self::collapse($request->path()),
+            RouteGrouping::Uri => $this->pattern($route) ?? self::collapse($request->path()),
             RouteGrouping::Name => $this->name($route)
                 ?? $this->pattern($route)
-                ?? $this->collapse($request->path()),
+                ?? self::collapse($request->path()),
         };
     }
 
@@ -95,7 +95,7 @@ final readonly class RouteNameGrouper
     /**
      * Replace identifier-looking segments with a placeholder.
      */
-    public function collapse(string $path): string
+    public static function collapse(string $path): string
     {
         $segments = explode('/', trim($path, '/'));
 

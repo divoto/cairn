@@ -38,8 +38,9 @@ That single decision is where everything else follows from, in both directions.
 | **Multi-day journeys.** No "they read the blog on Monday and bought on Friday". | **No IP address in your database, logs or backups.** It exists in memory for one lookup, then it is gone. |
 | **Multi-touch attribution.** Last-click only, because there is no earlier touch to attribute to. | **A breach of your analytics table leaks counts, not people.** |
 | **Unique counts inflated over long ranges.** A month is the sum of its days. | **Route names, not URLs.** `/orders/8814/invoice` and `/orders/9921/invoice` are one page. |
-| **Cross-device anything.** | **Eloquent models as first-class subjects.** `$article->trackView()`. |
-| **Exact time-on-page and scroll depth** unless you enable the optional beacon. | **Nothing blocks the response.** Recording happens after the page is sent. |
+| **Cross-device anything.** | **Eloquent models as first-class subjects.** `$article->trackView()`, then `$article->views()` and a Top content panel that names them. |
+| **Exact time-on-page, scroll depth and Core Web Vitals** unless you enable the optional beacon. | **Nothing blocks the response.** Recording happens after the page is sent. |
+| **A funnel.** No same-session path analysis. | **Bounce rate per landing page**, which the entry table alone cannot answer. |
 
 If returning-visitor counts are essential to your work, Cairn is the wrong tool
 and you should use something that sets a cookie and asks for consent. It will
@@ -53,9 +54,10 @@ chart has a table underneath it. Dark mode follows your system.
 
 ![The dashboard in dark mode](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-dark.png)
 
-Fifteen widgets ship by default. Each one is a class: reorder them, remove them,
-or add your own by subclassing `Widget` — or `DimensionWidget`, for a ranked
-table of a single dimension.
+Eighteen widgets ship by default, and three more — Languages, Screen sizes and
+Exit pages — are one line of config away. Each one is a class: reorder them,
+remove them, or add your own by subclassing `Widget` — or `DimensionWidget`,
+for a ranked table of a single dimension.
 
 ![Channels, countries, devices, browsers, operating systems and campaigns](https://raw.githubusercontent.com/divoto/cairn/main/art/widgets-dark.png)
 
@@ -231,6 +233,10 @@ php artisan vendor:publish --tag=cairn-config
 
 Every option is commented. The two above carry a longer explanation of what
 they change.
+
+The optional beacon, which measures time on page, scroll depth, screen size
+and Core Web Vitals, is placed with the `@cairn` directive in your layout —
+see [the installation guide](documentation/installation.md#optional-the-beacon).
 
 Publish tags: `cairn-config`, `cairn-migrations`, `cairn-views`,
 `cairn-assets`, `cairn-privacy`, `cairn-inertia`, `cairn-pulse-views`.

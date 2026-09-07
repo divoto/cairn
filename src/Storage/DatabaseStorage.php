@@ -11,12 +11,14 @@ use Divoto\Cairn\Data\AggregateQuery;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Data\ReportRow;
 use Divoto\Cairn\Enums\Dimension;
+use Divoto\Cairn\Enums\DimensionSource;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Buckets;
 use Divoto\Cairn\Support\EntryMapper;
+use Divoto\Cairn\Support\SubjectKey;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -48,6 +50,20 @@ final readonly class DatabaseStorage implements Storage
      * longer rather than hold locks the host application waits on.
      */
     private const DELETE_CHUNK = 1000;
+
+    /**
+     * Google's "good" thresholds for the Core Web Vitals.
+     *
+     * Constants rather than config: they are the published definition of the
+     * metric, and a deployment that moved them would report a "good LCP share"
+     * that meant something different from everybody else's.
+     */
+    private const LCP_GOOD_MS = 2500;
+
+    private const INP_GOOD_MS = 200;
+
+    /** 0.10, in the thousandths the column stores. */
+    private const CLS_GOOD_MILLI = 100;
 
     public function __construct(
         private DatabaseManager $database,
@@ -197,7 +213,13 @@ final readonly class DatabaseStorage implements Storage
                     continue;
                 }
 
-                foreach ($this->measureBy($bucket, $end, $tenant, $dimension) as $value => $metrics) {
+                $measured = match (true) {
+                    $dimension->source() === DimensionSource::Sessions => $this->measureSessionsBy($bucket, $end, $tenant, $dimension),
+                    $dimension->isComposite() => $this->measureSubjects($bucket, $end, $tenant),
+                    default => $this->measureBy($bucket, $end, $tenant, $dimension),
+                };
+
+                foreach ($measured as $value => $metrics) {
                     foreach ($metrics as $metric => $amount) {
                         $rows[] = $this->aggregateRow(
                             $bucket,
@@ -265,6 +287,170 @@ final readonly class DatabaseStorage implements Storage
 
             if ($amount !== 0.0) {
                 $out[$metric->value] = $amount;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Measure the subject dimension for a bucket.
+     *
+     * The one dimension keyed from two columns, so it gets its own small
+     * branch rather than bending {@see self::measureBy()} out of shape.
+     *
+     * A subject only ever reaches an entry through `trackView()`,
+     * `trackEvent()` or `trackConversion()`, all of which record an event or a
+     * conversion — never a pageview. So the pageview count of an article would
+     * always be zero, which is useless, and its event count would silently
+     * include its views, which is worse.
+     *
+     * Views are therefore counted as this dimension's pageviews, and the event
+     * count excludes them. "Viewed" is Cairn's own vocabulary rather than
+     * something a caller chose, which is what entitles storage to read it:
+     * {@see SubjectKey::VIEW_EVENT}.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function measureSubjects(
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $tenant,
+    ): array {
+        $event = "'".EntryType::Event->value."'";
+        $conversion = "'".EntryType::Conversion->value."'";
+        $viewed = "'".SubjectKey::VIEW_EVENT."'";
+
+        $rows = $this->entriesIn($from, $to, $tenant)
+            ->whereNotNull('subject_type')
+            ->whereNotNull('subject_id')
+            ->groupBy('subject_type', 'subject_id')
+            ->selectRaw('subject_type, subject_id, '.implode(', ', [
+                "sum(case when type = {$event} and name = {$viewed} then 1 else 0 end) as m_views",
+                "sum(case when type = {$event} and name <> {$viewed} then 1 else 0 end) as m_events",
+                "sum(case when type = {$conversion} then 1 else 0 end) as m_conversions",
+                "sum(case when type = {$conversion} then coalesce(value, 0) else 0 end) as m_conversion_value",
+            ]))
+            ->get();
+
+        $map = [
+            'm_views' => Metric::Pageviews,
+            'm_events' => Metric::Events,
+            'm_conversions' => Metric::Conversions,
+            'm_conversion_value' => Metric::ConversionValue,
+        ];
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = (array) $row;
+            $type = $data['subject_type'] ?? null;
+            $id = $data['subject_id'] ?? null;
+
+            // @codeCoverageIgnoreStart
+            // Both are excluded at the SQL level by whereNotNull() above.
+            if (! is_string($type)) {
+                continue;
+            }
+
+            if (! is_string($id) && ! is_int($id)) {
+                continue;
+            }
+            // @codeCoverageIgnoreEnd
+
+            $measurements = [];
+
+            foreach ($map as $select => $metric) {
+                $amount = is_numeric($data[$select] ?? null) ? (float) $data[$select] : 0.0;
+
+                if ($amount !== 0.0) {
+                    $measurements[$metric->value] = $amount;
+                }
+            }
+
+            if ($measurements !== []) {
+                $out[SubjectKey::for($type, $id)] = $measurements;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Measure one session-sourced dimension for a bucket.
+     *
+     * The sibling of {@see self::measureBy()} for landing and exit pages,
+     * which are columns on `cairn_sessions` rather than on `cairn_entries`.
+     * Grouping the session table by one of them gives what the entry table
+     * cannot: a bounce rate and an average duration for a single page.
+     *
+     * Sessions are attributed to the bucket they *started* in, exactly as the
+     * site-wide figure is. Any other assignment stops the daily counts summing
+     * to the monthly one.
+     *
+     * `page_count` is summed as pageviews. That is a real measurement rather
+     * than a borrowed one: the number of pages in the visits that began on
+     * this landing page.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function measureSessionsBy(
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $tenant,
+        Dimension $dimension,
+    ): array {
+        $column = $dimension->column();
+
+        $rows = $this->connection()
+            ->table(Tables::sessions())
+            ->where('tenant_id', $tenant)
+            ->where('started_at', '>=', $from->toDateTimeString())
+            ->where('started_at', '<', $to->toDateTimeString())
+            ->whereNotNull($column)
+            ->groupBy($column)
+            ->selectRaw($column.', '.implode(', ', [
+                'count(*) as m_sessions',
+                // Truthiness rather than `= 1`: is_bounce is a real boolean on
+                // PostgreSQL, where comparing it to an integer is a type error.
+                'sum(case when is_bounce then 1 else 0 end) as m_bounces',
+                'sum(coalesce(duration_seconds, 0)) as m_session_seconds',
+                'sum(coalesce(page_count, 0)) as m_pageviews',
+            ]))
+            ->get();
+
+        $map = [
+            'm_sessions' => Metric::Sessions,
+            'm_bounces' => Metric::Bounces,
+            'm_session_seconds' => Metric::SessionSeconds,
+            'm_pageviews' => Metric::Pageviews,
+        ];
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = (array) $row;
+            $value = $data[$column] ?? null;
+
+            // @codeCoverageIgnoreStart
+            // whereNotNull() above already excludes this at the SQL level.
+            if ($value === null) {
+                continue;
+            }
+            // @codeCoverageIgnoreEnd
+
+            $measurements = [];
+
+            foreach ($map as $select => $metric) {
+                $amount = is_numeric($data[$select] ?? null) ? (float) $data[$select] : 0.0;
+
+                if ($amount !== 0.0) {
+                    $measurements[$metric->value] = $amount;
+                }
+            }
+
+            if ($measurements !== []) {
+                $out[(string) (is_scalar($value) ? $value : '')] = $measurements;
             }
         }
 
@@ -355,6 +541,24 @@ final readonly class DatabaseStorage implements Storage
             'sum(case when time_on_page is null then 0 else 1 end) as m_time_samples',
             'sum(coalesce(scroll_depth, 0)) as m_scroll_total',
             'sum(case when scroll_depth is null then 0 else 1 end) as m_scroll_samples',
+
+            // Core Web Vitals. Each is a sum, a sample count and a count of
+            // the samples that met Google's threshold, so the share of good
+            // page views can be recomputed at whatever level it is displayed
+            // at rather than averaged from per-bucket shares.
+            //
+            // These ride the entry measurement, so every materialised
+            // dimension gets them without a second pass — vitals per route
+            // fall out of the same query as vitals per country.
+            'sum(coalesce(lcp_ms, 0)) as m_lcp_ms',
+            'sum(case when lcp_ms is null then 0 else 1 end) as m_lcp_samples',
+            'sum(case when lcp_ms is not null and lcp_ms <= '.self::LCP_GOOD_MS.' then 1 else 0 end) as m_lcp_good',
+            'sum(coalesce(inp_ms, 0)) as m_inp_ms',
+            'sum(case when inp_ms is null then 0 else 1 end) as m_inp_samples',
+            'sum(case when inp_ms is not null and inp_ms <= '.self::INP_GOOD_MS.' then 1 else 0 end) as m_inp_good',
+            'sum(coalesce(cls_milli, 0)) as m_cls_milli',
+            'sum(case when cls_milli is null then 0 else 1 end) as m_cls_samples',
+            'sum(case when cls_milli is not null and cls_milli <= '.self::CLS_GOOD_MILLI.' then 1 else 0 end) as m_cls_good',
         ]);
     }
 
@@ -381,6 +585,15 @@ final readonly class DatabaseStorage implements Storage
             'm_time_samples' => Metric::TimeOnPageSamples,
             'm_scroll_total' => Metric::ScrollDepthTotal,
             'm_scroll_samples' => Metric::ScrollDepthSamples,
+            'm_lcp_ms' => Metric::LcpMilliseconds,
+            'm_lcp_samples' => Metric::LcpSamples,
+            'm_lcp_good' => Metric::LcpGood,
+            'm_inp_ms' => Metric::InpMilliseconds,
+            'm_inp_samples' => Metric::InpSamples,
+            'm_inp_good' => Metric::InpGood,
+            'm_cls_milli' => Metric::ClsMilli,
+            'm_cls_samples' => Metric::ClsSamples,
+            'm_cls_good' => Metric::ClsGood,
         ];
 
         $out = [];

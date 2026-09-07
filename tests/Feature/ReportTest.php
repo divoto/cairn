@@ -16,6 +16,7 @@ use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Exceptions\UnavailableDimensionException;
 use Divoto\Cairn\Facades\Cairn;
 use Divoto\Cairn\Reporting\Report;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Events\QueryExecuted;
@@ -81,6 +82,29 @@ function seedDataset(): void
         CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
         Period::Day,
     );
+}
+
+/**
+ * Seed a closed visit directly, so a bounce rate is a hand count rather than
+ * something derived from the resolver.
+ */
+function reportVisit(string $startedAt, string $entryUrl, int $pages, bool $bounce, int $seconds): void
+{
+    $at = CarbonImmutable::parse($startedAt, 'UTC');
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    $connection->table(Tables::sessions())->insert([
+        'id' => Binary::bind($connection, random_bytes(8)),
+        'visitor' => Binary::bind($connection, random_bytes(16)),
+        'started_at' => $at->toDateTimeString(),
+        'last_activity_at' => $at->addSeconds($seconds)->toDateTimeString(),
+        'page_count' => $pages,
+        'duration_seconds' => $seconds,
+        'entry_url' => $entryUrl,
+        'exit_url' => $entryUrl,
+        'is_bounce' => $bounce,
+        'tenant_id' => '',
+    ]);
 }
 
 function aReport(): Report
@@ -516,8 +540,46 @@ it('refuses to group by a dimension that is not rolled up', function (Dimension 
     'url' => [Dimension::Url],
     'region' => [Dimension::Region],
     'city' => [Dimension::City],
-    'screen class' => [Dimension::ScreenClass],
 ]);
+
+/**
+ * The one place the report builder reads a table other than cairn_aggregates'
+ * entry-derived rows. A landing page is a column on cairn_sessions, so a
+ * report grouped by it can answer with a bounce rate — which no other grouping
+ * on the dashboard can.
+ */
+it('reports a bounce rate for a report grouped by landing page', function (): void {
+    reportVisit('2026-03-14 09:00:00', '/pricing', pages: 3, bounce: false, seconds: 180);
+    reportVisit('2026-03-14 09:30:00', '/pricing', pages: 1, bounce: true, seconds: 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $row = aReport()
+        ->metrics(Metric::Sessions, Metric::BounceRate)
+        ->groupBy(Dimension::EntryPage)
+        ->get()
+        ->first();
+
+    expect($row?->dimension('entry_url'))->toBe('/pricing')
+        ->and($row?->metric(Metric::Sessions))->toBe(2.0)
+        ->and($row?->metric(Metric::BounceRate))->toBe(0.5);
+});
+
+/**
+ * Session-sourced or not, v1 still materialises one dimension at a time. A
+ * landing page combined with a country is a pair nothing ever measured.
+ */
+it('refuses to combine a landing page with another dimension', function (): void {
+    expect(fn (): Collection => aReport()
+        ->groupBy(Dimension::EntryPage)
+        ->filter(Dimension::Country, 'GB')
+        ->get())
+        ->toThrow(UnavailableDimensionException::class, 'single-dimension rollups only');
+});
 
 it('refuses to filter by a dimension that is not rolled up', function (): void {
     expect(fn (): Collection => aReport()->filter(Dimension::Url, '/pricing')->get())

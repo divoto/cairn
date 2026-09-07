@@ -6,13 +6,18 @@ use Carbon\CarbonImmutable;
 use Divoto\Cairn\Commands\WorkCommand;
 use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Storage;
+use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Geo\MaxMindGeoResolver;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Maintenance\Doctor;
 use Divoto\Cairn\Maintenance\Finding;
 use Divoto\Cairn\Recorders\PageViews;
+use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\SubjectKey;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Gate;
@@ -37,6 +42,34 @@ function findingTitles(): string
  * Silence the findings a default test environment would otherwise produce, so
  * each test below reports on the one condition it sets.
  */
+/**
+ * A stand-in for the host application's authenticatable model.
+ */
+final class DoctorUser extends Model
+{
+    protected $table = 'doctor_users';
+}
+
+/**
+ * One entry row recorded against a subject type.
+ *
+ * @return array<string, mixed>
+ */
+function subjectEntry(string $type): array
+{
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    return [
+        'occurred_at' => CarbonImmutable::now('UTC')->toDateTimeString(),
+        'type' => EntryType::Event->value,
+        'visitor' => Binary::bind($connection, random_bytes(16)),
+        'name' => SubjectKey::VIEW_EVENT,
+        'subject_type' => $type,
+        'subject_id' => '1',
+        'tenant_id' => '',
+    ];
+}
+
 function quietDoctor(): void
 {
     config()->set('cairn.ingest.lottery', [0, 100]);
@@ -213,6 +246,56 @@ it('erases a user when asked for one', function (): void {
  * The most consequential finding: anybody who finds the URL can read every
  * page, referrer and campaign on the site.
  */
+/**
+ * Tracking views of content is what the subject dimension is for. Tracking
+ * views of people is a different thing to have decided on purpose, and puts
+ * user ids into aggregate keys, which outlive raw retention and are not
+ * covered by cairn:forget.
+ */
+it('reports views recorded against the application user model', function (): void {
+    quietDoctor();
+
+    config()->set('auth.providers.users.model', DoctorUser::class);
+
+    app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::entries())
+        ->insert(subjectEntry(DoctorUser::class));
+
+    expect(findingTitles())->toContain('recorded against your user model');
+});
+
+it('matches the user model by its morph alias too', function (): void {
+    quietDoctor();
+
+    Relation::morphMap(['user' => DoctorUser::class]);
+    config()->set('auth.providers.users.model', DoctorUser::class);
+
+    app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::entries())
+        ->insert(subjectEntry('user'));
+
+    $titles = findingTitles();
+
+    Relation::morphMap([], false);
+
+    expect($titles)->toContain('recorded against your user model');
+});
+
+it('says nothing when the only subjects are content', function (): void {
+    quietDoctor();
+
+    config()->set('auth.providers.users.model', DoctorUser::class);
+
+    app(DatabaseManager::class)
+        ->connection(Tables::connection())
+        ->table(Tables::entries())
+        ->insert(subjectEntry('App\\Models\\Article'));
+
+    expect(findingTitles())->not->toContain('recorded against your user model');
+});
+
 it('reports a dashboard reachable without authentication in production', function (): void {
     quietDoctor();
 

@@ -7,6 +7,7 @@ namespace Divoto\Cairn\Identity;
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Data\Session;
 use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\RouteNameGrouper;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -111,8 +112,8 @@ final readonly class SessionResolver
                 'last_activity_at' => $at->toDateTimeString(),
                 'page_count' => 1,
                 'duration_seconds' => 0,
-                'entry_url' => $url,
-                'exit_url' => $url,
+                'entry_url' => $this->page($url),
+                'exit_url' => $this->page($url),
                 'is_bounce' => true,
                 'tenant_id' => $this->tenantValue($session->tenantId),
             ], $this->acquisitionColumns($acquisition)));
@@ -124,10 +125,35 @@ final readonly class SessionResolver
             'last_activity_at' => $at->toDateTimeString(),
             'page_count' => $connection->raw('page_count + 1'),
             'duration_seconds' => max(0, $at->getTimestamp() - $session->startedAt->getTimestamp()),
-            'exit_url' => $url,
+            'exit_url' => $this->page($url),
             // A visit stops being a bounce the moment a second page arrives.
             'is_bounce' => false,
         ]);
+    }
+
+    /**
+     * The landing- or exit-page key for a URL.
+     *
+     * The entry's own `url` is a raw path, so `/orders/8814/invoice` and
+     * `/orders/9921/invoice` would be two landing pages and neither would
+     * aggregate into anything. The same id-collapsing the `path` route
+     * grouping uses turns both into `/orders/{id}/invoice`.
+     *
+     * The query string goes too. UTM parameters are dimensions of their own,
+     * and keeping them here would split one landing page across every campaign
+     * that pointed at it — the opposite of what the panel is for.
+     *
+     * Rows written before this stay as they are and age out with retention.
+     */
+    private function page(?string $url): ?string
+    {
+        if ($url === null || $url === '') {
+            return null;
+        }
+
+        $path = explode('?', $url)[0];
+
+        return mb_substr(RouteNameGrouper::collapse($path), 0, 512);
     }
 
     /**

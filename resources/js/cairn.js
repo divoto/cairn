@@ -34,6 +34,14 @@
 
     var page, sent;
 
+    // CLS is the one vital where zero is the best score rather than nothing
+    // measured. LCP and event timing exist on more engines than layout shift
+    // does, so a browser without that observer has to send CLS as absent, or
+    // every visit from it would count as a page that never shifted.
+    var measuresShift = !!(window.PerformanceObserver
+        && window.PerformanceObserver.supportedEntryTypes
+        && window.PerformanceObserver.supportedEntryTypes.indexOf('layout-shift') !== -1);
+
     function start() {
         page = {
             u: location.pathname,
@@ -41,7 +49,8 @@
             s: 0,               // deepest scroll, as a percentage
             v: window.innerWidth || 0,
             z: 0,               // timezone offset, minutes
-            l: 0, i: 0, c: 0    // LCP, INP, CLS
+            l: 0, i: 0,         // LCP, INP
+            c: measuresShift ? 0 : null
         };
 
         try { page.z = new Date().getTimezoneOffset(); } catch (e) {}
@@ -80,7 +89,7 @@
                 timezone: page.z,
                 lcp: Math.round(page.l),
                 inp: Math.round(page.i),
-                cls: Math.round(page.c * 1000) / 1000
+                cls: page.c === null ? null : Math.round(page.c * 1000) / 1000
             })], { type: 'application/json' }));
         } catch (e) {}
     }
@@ -103,7 +112,7 @@
 
         observe('layout-shift', function (list) {
             list.getEntries().forEach(function (entry) {
-                if (!entry.hadRecentInput) { page.c += entry.value; }
+                if (!entry.hadRecentInput && page.c !== null) { page.c += entry.value; }
             });
         });
 

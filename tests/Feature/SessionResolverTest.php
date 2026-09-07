@@ -61,6 +61,10 @@ it('continues an existing session within the inactivity window', function (): vo
  * string: a plain integer written into it is stored, and read back, as one.
  * This is what that looks like arriving from the database, however it got
  * there — treated as no open session rather than trusted half-parsed.
+ *
+ * Only SQLite can stage this. PostgreSQL rejects the integer outright and
+ * MySQL coerces it into a valid datetime, so on both the resolver never sees
+ * anything but a string.
  */
 it('treats an existing session as absent if its timestamp did not come back as a string', function (): void {
     $visitor = random_bytes(16);
@@ -74,7 +78,7 @@ it('treats an existing session as absent if its timestamp did not come back as a
     $second = sessions()->resolve($visitor, $start->addMinutes(5));
 
     expect($second->isNew)->toBeTrue();
-});
+})->skip(fn (): bool => Tables::driver() !== 'sqlite', 'Only SQLite stores a non-string in a datetime column.');
 
 it('starts a new session once the inactivity window has passed', function (): void {
     $visitor = random_bytes(16);
@@ -125,6 +129,27 @@ it('records the entry url once and the exit url on every page', function (): voi
 
     expect($row['entry_url'] ?? null)->toBe('/landing')
         ->and($row['exit_url'] ?? null)->toBe('/pricing');
+});
+
+/**
+ * Not every recorded request has a URL to attribute — a console-triggered
+ * entry has none. The column stays null rather than being written as an empty
+ * string, which would become a landing page called "" on the panel.
+ */
+it('stores no landing page for a request that has no url', function (): void {
+    $visitor = random_bytes(16);
+    $start = CarbonImmutable::parse('2026-03-14 12:00:00', 'UTC');
+
+    $session = sessions()->resolve($visitor, $start);
+
+    // No URL at all, which is what the third argument defaults to.
+    sessions()->record($session, $start);
+
+    $row = (array) sessionRows()->first();
+
+    expect(array_key_exists('entry_url', $row))->toBeTrue()
+        ->and($row['entry_url'])->toBeNull()
+        ->and($row['exit_url'])->toBeNull();
 });
 
 /**

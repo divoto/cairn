@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Tests;
 
 use Divoto\Cairn\CairnServiceProvider;
+use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Env;
 use Laravel\Pulse\PulseServiceProvider;
@@ -81,10 +82,26 @@ abstract class TestCase extends Orchestra
 
         $config->set('cairn.enabled', true);
 
+        // Pulse is here for its cards, not its recorders. Left on, every
+        // request ends with Pulse writing to pulse_* tables this database does
+        // not have. The insert fails inside a savepoint and is harmless, but
+        // one ingest in a thousand also trims, outside any savepoint — and on
+        // PostgreSQL a failed statement aborts the surrounding transaction,
+        // so every query the test runs after that request fails too.
+        $config->set('pulse.recorders', []);
+
         // The shipped default is ['api', 'auth:sanctum']; sanctum is not
         // installed here. ConfigurationTest asserts the real default — this
         // only makes the routes resolvable in the test application.
         $config->set('cairn.api.middleware', ['api']);
+
+        // Host-application tables the suite attributes analytics to. Registered
+        // the way a service provider's loadMigrationsFrom() does it, so that
+        // RefreshDatabase's own migrate run creates them outside the per-test
+        // transaction — see tests/Fixtures/migrations for why that matters.
+        $app->afterResolving('migrator', function (Migrator $migrator): void {
+            $migrator->path(__DIR__.'/Fixtures/migrations');
+        });
     }
 
     /**

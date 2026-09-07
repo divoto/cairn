@@ -8,6 +8,8 @@ use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Enums\ScreenClass;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
@@ -52,6 +54,78 @@ function seedEntry(
     $collection = new Collection([$entry]);
 
     app(Storage::class)->store($collection);
+}
+
+/**
+ * Seed a pageview carrying the two client-side dimensions. Screen class only
+ * ever arrives with the beacon, so it is set explicitly rather than derived.
+ */
+function seedClientEntry(string $at, ?string $language, ?ScreenClass $screenClass): void
+{
+    /** @var Collection<int, Entry> $collection */
+    $collection = new Collection([new Entry(
+        occurredAt: CarbonImmutable::parse($at, 'UTC'),
+        type: EntryType::Pageview,
+        visitor: random_bytes(16),
+        route: 'pricing.index',
+        url: '/pricing',
+        screenClass: $screenClass,
+        language: $language,
+        durationMs: 20,
+    )]);
+
+    app(Storage::class)->store($collection);
+}
+
+/**
+ * Seed a pageview carrying measured Core Web Vitals. CLS is given in the
+ * thousandths the column stores, so every expectation stays hand-calculable.
+ */
+function seedVitalsEntry(string $at, ?int $lcpMs, ?int $inpMs, ?int $clsMilli): void
+{
+    /** @var Collection<int, Entry> $collection */
+    $collection = new Collection([new Entry(
+        occurredAt: CarbonImmutable::parse($at, 'UTC'),
+        type: EntryType::Pageview,
+        visitor: random_bytes(16),
+        route: 'pricing.index',
+        url: '/pricing',
+        durationMs: 20,
+        lcpMs: $lcpMs,
+        inpMs: $inpMs,
+        clsMilli: $clsMilli,
+    )]);
+
+    app(Storage::class)->store($collection);
+}
+
+/**
+ * Seed a closed session directly, so every expectation below is
+ * hand-calculable rather than derived from the resolver under test.
+ */
+function seedVisitSession(
+    string $startedAt,
+    string $entryUrl,
+    string $exitUrl,
+    int $pages,
+    bool $bounce,
+    int $seconds,
+): void {
+    $at = CarbonImmutable::parse($startedAt, 'UTC');
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    $connection->table(Tables::sessions())->insert([
+        'id' => Binary::bind($connection, random_bytes(8)),
+        'visitor' => Binary::bind($connection, random_bytes(16)),
+        'started_at' => $at->toDateTimeString(),
+        'last_activity_at' => $at->addSeconds($seconds)->toDateTimeString(),
+        'page_count' => $pages,
+        'duration_seconds' => $seconds,
+        'entry_url' => $entryUrl,
+        'exit_url' => $exitUrl,
+        'is_bounce' => $bounce,
+        'tenant_id' => '',
+    ]);
 }
 
 function metricFor(string $type, string $aggregate = 'overall'): float
@@ -230,6 +304,207 @@ it('materialises single-dimension breakdowns', function (): void {
         ->value('value');
 
     expect(columnFloat($pricing))->toBe(2.0);
+});
+
+/**
+ * Language and screen class were recorded from 1.0 and rolled up from 1.2.
+ * Both are bounded — a short tag, and four buckets — so each adds a handful of
+ * rows per bucket rather than one per distinct value.
+ */
+it('materialises the language and screen class already recorded', function (): void {
+    seedClientEntry('2026-03-14 09:00:00', 'en-GB', ScreenClass::Large);
+    seedClientEntry('2026-03-14 09:05:00', 'en-GB', ScreenClass::Small);
+    seedClientEntry('2026-03-14 09:10:00', 'de', ScreenClass::Large);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Pageviews->value, 'language'))->toBe(3.0)
+        ->and(metricFor(Metric::Pageviews->value, 'screen_class'))->toBe(3.0);
+
+    $english = aggregates()
+        ->where('aggregate', 'language')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['language' => 'en-GB']))
+        ->value('value');
+
+    $large = aggregates()
+        ->where('aggregate', 'screen_class')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['screen_class' => ScreenClass::Large->value]))
+        ->value('value');
+
+    expect(columnFloat($english))->toBe(2.0)
+        ->and(columnFloat($large))->toBe(2.0);
+});
+
+/**
+ * Nine aggregates, not three: a sum, a sample count and a count of the samples
+ * that met the threshold, for each vital. The good share has to be recomputed
+ * at the level it is shown at — averaging seven daily good-shares gives a
+ * different, wrong answer from dividing the week's good count by the week's
+ * samples, which is the whole reason Metric separates additive from derived.
+ */
+it('rolls up the three vitals as a sum, a sample count and a good count', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1800, 90, 40);
+    seedVitalsEntry('2026-03-14 09:05:00', 4200, 350, 250);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    // One of the two met every threshold: LCP under 2500, INP under 200,
+    // CLS under 0.10.
+    expect(metricFor(Metric::LcpMilliseconds->value))->toBe(6000.0)
+        ->and(metricFor(Metric::LcpSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::LcpGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::InpMilliseconds->value))->toBe(440.0)
+        ->and(metricFor(Metric::InpSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::InpGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsMilli->value))->toBe(290.0)
+        ->and(metricFor(Metric::ClsSamples->value))->toBe(2.0)
+        ->and(metricFor(Metric::ClsGood->value))->toBe(1.0);
+});
+
+/**
+ * The vitals ride the entry measurement, so every materialised dimension gets
+ * them without a second pass — vitals per route fall out of the same query as
+ * vitals per country.
+ */
+it('measures the vitals for every materialised dimension, not just site-wide', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1800, 90, 40);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::LcpGood->value, 'route'))->toBe(1.0);
+});
+
+/**
+ * A page nothing measured contributes to no sample count, so it cannot drag a
+ * good share down. An unmeasured page is not a slow one.
+ */
+it('counts no vitals sample for an entry that carries none', function (): void {
+    seedEntry('2026-03-14 09:00:00');
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::LcpSamples->value))->toBe(0.0)
+        ->and(metricFor(Metric::Pageviews->value))->toBe(1.0);
+});
+
+/**
+ * A perfect CLS is zero, and zero is exactly what the rollup drops from the
+ * sum. The sample and good counts are what carry it, which is why the average
+ * is a ratio of two stored numbers rather than a stored average.
+ */
+it('counts a zero CLS as a measured, good sample', function (): void {
+    seedVitalsEntry('2026-03-14 09:00:00', 1200, 40, 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::ClsSamples->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsGood->value))->toBe(1.0)
+        ->and(metricFor(Metric::ClsMilli->value))->toBe(0.0);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Session-sourced dimensions
+|--------------------------------------------------------------------------
+|
+| Landing and exit pages are columns on cairn_sessions, not on cairn_entries.
+| That is the whole point of them: sessions carry bounces and durations, so
+| these are the only dimensions that can report a bounce rate per value.
+|
+*/
+
+it('rolls up landing and exit pages from the session table', function (): void {
+    seedVisitSession('2026-03-14 09:00:00', '/pricing', '/checkout', pages: 3, bounce: false, seconds: 180);
+    seedVisitSession('2026-03-14 09:30:00', '/pricing', '/pricing', pages: 1, bounce: true, seconds: 0);
+    seedVisitSession('2026-03-14 10:00:00', '/docs', '/docs', pages: 1, bounce: true, seconds: 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Sessions->value, 'entry_url'))->toBe(3.0)
+        ->and(metricFor(Metric::Sessions->value, 'exit_url'))->toBe(3.0);
+
+    $pricing = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Sessions->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    $bounces = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Bounces->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    // Two visits began on /pricing and one of them bounced.
+    expect(columnFloat($pricing))->toBe(2.0)
+        ->and(columnFloat($bounces))->toBe(1.0);
+});
+
+/**
+ * Pageviews survives the crossing from one table to the other: the session
+ * row counts the pages in the visit, so the pageviews of a landing page is
+ * the sum of those counts rather than the site-wide figure wearing a label.
+ */
+it('sums the page count of the visits that began on a page', function (): void {
+    seedVisitSession('2026-03-14 09:00:00', '/pricing', '/checkout', pages: 3, bounce: false, seconds: 180);
+    seedVisitSession('2026-03-14 09:30:00', '/pricing', '/pricing', pages: 1, bounce: true, seconds: 0);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $pageviews = aggregates()
+        ->where('aggregate', 'entry_url')
+        ->where('type', Metric::Pageviews->value)
+        ->where('key', json_encode(['entry_url' => '/pricing']))
+        ->value('value');
+
+    expect(columnFloat($pageviews))->toBe(4.0);
+});
+
+/**
+ * A visit that spans midnight belongs to the day it began, exactly as the
+ * site-wide session count does. Any other assignment stops the daily figures
+ * summing to the monthly one.
+ */
+it('attributes a landing page to the bucket the visit started in', function (): void {
+    seedVisitSession('2026-03-14 23:50:00', '/pricing', '/checkout', pages: 2, bounce: false, seconds: 1200);
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-15 00:00:00', 'UTC'),
+        CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    expect(metricFor(Metric::Sessions->value, 'entry_url'))->toBe(0.0);
 });
 
 /**

@@ -90,6 +90,26 @@ duration.
 A full referring URL is never stored. It can carry a search query, a session
 token, or the title of a private document.
 
+With the optional JavaScript beacon enabled, an entry may also carry what the
+server cannot see about a page render. The beacon sends exactly seven fields
+and nothing else:
+
+| Field | Stored as |
+| --- | --- |
+| The path it was on | matched against a pageview the server already recorded |
+| Seconds on the page | `time_on_page` |
+| Deepest scroll, as a percentage | `scroll_depth` |
+| Viewport width in CSS pixels | bucketed to one of four `screen_class` values; the width itself is discarded |
+| Largest Contentful Paint, ms | `lcp_ms` |
+| Interaction to Next Paint, ms | `inp_ms` |
+| Cumulative Layout Shift | `cls_milli`, the ratio times a thousand |
+
+These are timings of one page render. They add no identifying signal, and the
+Core Web Vitals in particular were already being measured by the browser
+whether or not anything collected them. The beacon reads no cookies, writes
+none, and collects nothing — device memory, CPU count, installed fonts, canvas
+signatures — whose only use is fingerprinting.
+
 ## What is never stored
 
 - IP addresses, in any form, anywhere.

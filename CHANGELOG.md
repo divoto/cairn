@@ -12,6 +12,129 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [1.2.0] - 2026-09-07
+
+Four things Cairn already recorded and never showed, and one check that
+follows from them. Every panel here is a rollup on top of data that was being
+collected before this release; nothing new is asked of a visitor anywhere in
+it.
+
+### Added
+
+- **Languages and screen sizes.** Both columns have been written on every
+  pageview since 1.0 and neither was ever reported. A language is shown as it
+  was recorded — the recorder keeps the first tag of `Accept-Language` and
+  nothing else, so `pt-BR` stays `pt-BR`. Screen sizes come from the optional
+  beacon only, and the panel says so rather than showing a zero; its unknown
+  bucket is left out, being a fact about measurement rather than about screens.
+  Neither panel is in the default list: fifteen panels was already a long page,
+  and the config file names both as opt-in.
+
+- **Core Web Vitals.** The beacon has measured LCP, INP and CLS since 1.0 and
+  put all three in every payload; the collect endpoint validated four other
+  fields and dropped these. They are now stored and reported per route, led by
+  the share of page views that met Google's thresholds — an average hides its
+  own tail, and one slow render in ten is exactly the experience worth knowing
+  about. Only Chromium has all three observers; a browser missing one
+  contributes no sample for that vital rather than a misleading zero, which
+  matters most for CLS, where zero is the best score rather than the absence
+  of one.
+
+- **Landing and exit pages.** The first dimensions measured from
+  `cairn_sessions` rather than `cairn_entries`, and therefore the first that
+  report a **bounce rate per page** — the question people actually ask of this
+  data, and one no other panel can answer. Clicking a landing page narrows the
+  headline sessions and bounce rate, which no filter could do before. Exit
+  pages ships opt-in: every visit ends somewhere, and a page at the top of that
+  table is not a fault by itself.
+
+- **Top content.** `trackView()` has written a subject type and id on every
+  entry since 1.0 and nothing read them back. Models are now ranked by views
+  and shown by name, and a model can name itself with `analyticsLabel()`. New
+  read helpers on `HasAnalytics`: `views()`, `analyticsEvents()` and
+  `analyticsConversions()`, each reading the rollup rather than raw entries.
+
+- **`cairn:doctor` reports views recorded against your user model.** Tracking
+  views of content is what the subject dimension is for. Tracking views of
+  people puts user ids into aggregate keys, which outlive raw retention and are
+  not covered by `cairn:forget`.
+
+### Changed
+
+- **A published config file now picks up settings added by later releases.**
+  Laravel merges top-level keys only, so a deployer who published
+  `config/cairn.php` at 1.0 never saw a key added inside `privacy` or
+  `dashboard` — their nested array won whole and the new setting read as null.
+  That is why `dashboard.widgets` needed a hard-coded fallback in 1.1, and
+  every future nested key would have needed its own. Cairn now merges its
+  defaults underneath a published file recursively, with one rule: **named
+  settings fill in, lists stay exactly as written.** Removing a widget or an
+  ignore pattern is still permanent, and `'widgets' => []` still means no
+  panels. Turn a setting off by writing `false` rather than by deleting it — a
+  deleted key is one you have expressed no opinion about, so it returns at its
+  default.
+
+- **A session's `entry_url` and `exit_url` now hold a collapsed path.**
+  Identifiers become `{id}`, so every order's invoice stops being its own
+  landing page with one session against it, and the query string is dropped —
+  campaigns have columns of their own, and keeping them here would split one
+  landing page across every campaign that pointed at it. Rows written before
+  this upgrade are left as they are and age out with retention.
+
+- **Tested on PHP 8.5.** The suite now runs on PHP 8.2 through 8.5 against
+  Laravel 12 and 13, at both the lowest and the highest dependency versions
+  the package allows.
+
+### Fixed
+
+- **A model event no longer fails the host's request.** `trackView()`,
+  `trackEvent()` and `trackConversion()` build their entry inside the host
+  application's own request, and building one reads the session table. With
+  Cairn's storage unreachable that read threw straight into the page, where
+  the pageview middleware, running after the response has gone out, would
+  have contained it. The trait now guards itself the same way: the failure
+  is reported and the page is served.
+
+- **Placing the beacon is documented.** The only mention of the `@cairn`
+  directive was a comment in the config file, which also described an
+  `auto_inject` switch that nothing reads. The installation guide now shows
+  where the tag goes, and the comment says what the switch is: reserved, and
+  not yet wired to anything.
+
+### Upgrading
+
+Run the migration, which adds three nullable columns to `cairn_entries`:
+
+```bash
+php artisan migrate
+```
+
+Then re-run the rollup over your retained raw entries, so the new panels have
+history rather than starting from the moment you upgraded:
+
+```bash
+php artisan cairn:rollup --from=2026-08-07 --to=2026-09-06 --period=all
+```
+
+`--period=all` rebuilds the hour, day and month buckets, which is what the
+dashboard's ranges read; the default of `day` alone would leave the "Today"
+and "Last 12 months" views without the new panels. Skip the step and the new
+panels are still correct, only empty until traffic accumulates. How far back
+it is worth going is bounded by `cairn.retention.entries` — the rollup can
+only aggregate raw entries that have not been pruned. Core Web Vitals are the
+exception either way: nothing before the upgrade stored them, so that panel
+fills from now on regardless.
+
+If you have published `config/cairn.php` **with a `dashboard.widgets` list**,
+the three new default panels — Web vitals, Landing pages and Top content —
+will not appear until you add them to it. That list is yours and Cairn will
+not add to it; every other new setting fills in on its own, as described under
+Changed.
+
+If you ran `config:cache` before upgrading, run it again. A cached
+configuration skips the merge entirely, so it is still the array your previous
+version built.
+
 ## [1.1.0] - 2026-08-31
 
 ### Fixed
@@ -327,6 +450,10 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[1.2.0]: https://github.com/divoto/cairn/releases/tag/v1.2.0
+
+[1.1.0]: https://github.com/divoto/cairn/releases/tag/v1.1.0
 
 [1.0.0]: https://github.com/divoto/cairn/releases/tag/v1.0.0
 

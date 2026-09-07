@@ -112,6 +112,26 @@ The setting applies from the moment you change it. Entries already recorded keep
 the grouping they were recorded with, so a switch shows up as old rows staying
 put and new ones appearing beside them.
 
+## Optional: the beacon
+
+Time on page, scroll depth, screen size and Core Web Vitals are measured in
+the browser, by a small script the server cannot stand in for. Place it in
+your layout, before `</body>`:
+
+```blade
+@cairn
+```
+
+It renders an inline `<script>` of under two kilobytes, or nothing at all
+while the `ClientMetrics` recorder is disabled, so a layout can carry it
+unconditionally. The script posts one measurement per page to `cairn/collect`
+and reads no cookies. Under a `script-src` Content Security Policy, allow it
+by hash: `Divoto\Cairn\Support\Beacon::cspHash()` returns the value for the
+header.
+
+Without it the dashboard still works. The panels that read these measurements
+show an explanatory empty state rather than a zero.
+
 ## Optional: Redis
 
 ```env
@@ -197,6 +217,32 @@ php artisan vendor:publish --tag=cairn-privacy     # privacy notice + opt-out st
 
 If you publish the migrations, call `CairnServiceProvider::ignoreMigrations()`
 from a service provider, or the same tables will be created twice.
+
+### A published config file and later upgrades
+
+A published `config/cairn.php` is yours; `composer update` never rewrites it.
+Cairn merges the packaged defaults underneath it, so a setting added by a later
+release still reaches you at its default rather than reading as null.
+
+The merge has one rule, and it is worth knowing which half you are in:
+
+- **Named settings fill in.** Anywhere the config is a block of named keys —
+  `privacy`, `retention`, `dashboard`, each entry under `recorders` — a key you
+  have not written takes the packaged default. You never have to re-publish to
+  pick up a new option.
+- **Lists stay exactly as written.** `dashboard.widgets`, `api.middleware`,
+  `ingest.lottery` and each recorder's `ignore` are decisions you made by
+  writing them out, so Cairn never adds to them. Removing a widget removes it
+  permanently, and `'widgets' => []` really does mean no panels.
+
+The consequence: **turn a setting off by writing `false`, not by deleting it.**
+A deleted key is one you have expressed no opinion about, so it comes back at
+its default. Every setting in the file is documented with its own value for
+exactly this reason.
+
+That also means a release adding a panel adds it to *your* dashboard only if
+you have not published a `widgets` list. If you have, the new panels are named
+in the upgrade notes and you add the ones you want.
 
 The Pulse cards have a tag of their own, `cairn-pulse-views`, and are
 deliberately not part of `cairn-views`. They are the only views Cairn ships

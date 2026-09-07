@@ -62,6 +62,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Contracts\Foundation\CachesConfiguration;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Contracts\Routing\Registrar;
 use Illuminate\Support\ServiceProvider;
@@ -218,10 +219,92 @@ final class CairnServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->mergeConfigFrom(self::CONFIG_PATH, 'cairn');
+        $this->mergeCairnConfig();
 
         $this->registerContracts();
         $this->registerIdentity();
+    }
+
+    /**
+     * Merge the packaged configuration under a published one.
+     *
+     * Laravel's `mergeConfigFrom` merges **top-level keys only**, so a
+     * deployer who published `config/cairn.php` at 1.0 never sees a setting
+     * added inside `privacy` or `dashboard` by a later release: their nested
+     * array wins whole, and the new key reads as null. That has already bitten
+     * this package once — `dashboard.widgets` needed a hard-coded fallback in
+     * {@see WidgetRegistry::DEFAULTS} so an upgrade added panels instead of
+     * removing every panel — and each release that adds a nested key would
+     * otherwise need its own version of that patch.
+     *
+     * Laravel's recursive variant, `replaceConfigRecursivelyFrom`, is worse
+     * here rather than better. It uses `array_replace_recursive`, which merges
+     * lists *by index*: a deployer who trimmed eighteen widgets down to two
+     * would get sixteen of them back, one of them twice, because indexes two
+     * through seventeen are missing from their array and get filled in from
+     * ours. Silently restoring panels somebody deleted is a worse failure than
+     * the one being fixed.
+     *
+     * So the rule is: **recurse into associative arrays, and let a published
+     * list or scalar win whole.** Every list in this config is a decision the
+     * deployer made by writing it out — which widgets to draw, which paths to
+     * ignore, which middleware to apply — and the whole point of publishing
+     * one is that it stays as written. Every associative array is a set of
+     * named settings, where a key we add is a default they have not had the
+     * chance to have an opinion about yet.
+     *
+     * The consequence worth knowing: deleting a key from an associative block
+     * restores its default rather than unsetting it. Settings are turned off
+     * by writing `false`, not by deletion, which is how this config documents
+     * every one of them.
+     */
+    private function mergeCairnConfig(): void
+    {
+        // Cached configuration was built with this merge already applied.
+        if ($this->app instanceof CachesConfiguration && $this->app->configurationIsCached()) {
+            return;
+        }
+
+        $config = $this->app->make(Repository::class);
+        $published = $config->get('cairn');
+
+        /** @var array<string, mixed> $defaults */
+        $defaults = require self::CONFIG_PATH;
+
+        $config->set('cairn', self::mergeDefaults(
+            $defaults,
+            is_array($published) ? $published : [],
+        ));
+    }
+
+    /**
+     * Fill in the keys a published array has not got yet.
+     *
+     * @param  array<array-key, mixed>  $defaults
+     * @param  array<array-key, mixed>  $published
+     * @return array<array-key, mixed>
+     */
+    private static function mergeDefaults(array $defaults, array $published): array
+    {
+        $merged = $defaults;
+
+        foreach ($published as $key => $value) {
+            $default = $defaults[$key] ?? null;
+
+            // Both sides have to be associative arrays to be worth recursing
+            // into. If either is a list — or the shape changed between
+            // releases — the published value is taken as written.
+            $recurse = is_array($value)
+                && is_array($default)
+                && ! array_is_list($value)
+                && ! array_is_list($default);
+
+            $merged[$key] = $recurse
+                ? self::mergeDefaults($default, $value)
+                : $value;
+        }
+
+        return $merged;
     }
 
     /**

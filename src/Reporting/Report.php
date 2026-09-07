@@ -467,7 +467,7 @@ final class Report
             return null;
         }
 
-        return Dimension::from((string) array_key_first($this->filters));
+        return Dimension::from(array_key_first($this->filters));
     }
 
     /**
@@ -482,7 +482,7 @@ final class Report
     {
         $narrowed = $this->narrowedDimension();
 
-        if (! $narrowed instanceof Dimension || $metric->isMeasuredPerDimension()) {
+        if (! $narrowed instanceof Dimension || $metric->isMeasuredFor($narrowed)) {
             return true;
         }
 

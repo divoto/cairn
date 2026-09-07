@@ -37,6 +37,7 @@ final class Format
             MetricUnit::Milliseconds => self::milliseconds($value),
             MetricUnit::Currency => number_format($value, 2),
             MetricUnit::Decimal => number_format($value, 2),
+            MetricUnit::Thousandths => number_format($value / 1000, 3),
             MetricUnit::Count => self::count($value),
         };
     }

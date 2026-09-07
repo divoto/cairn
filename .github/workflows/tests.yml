@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.2', '8.3', '8.4']
+        php: ['8.2', '8.3', '8.4', '8.5']
         laravel: ['12', '13']
         dependencies: [lowest, highest]
         exclude:
@@ -56,6 +56,10 @@ jobs:
 
       - name: Pin Laravel ${{ matrix.laravel }}
         run: |
+          # composer.json pins the platform to PHP 8.2 so a local update never
+          # resolves past what the package supports. Here the matrix is the
+          # platform: Laravel 13 needs the resolver to see PHP 8.3 or newer.
+          composer config platform.php "${{ matrix.php }}.0"
           composer require --no-update --no-interaction --dev \
             "orchestra/testbench:${{ matrix.testbench }}"
           composer require --no-update --no-interaction \

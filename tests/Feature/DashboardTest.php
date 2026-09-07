@@ -12,12 +12,19 @@ use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\EntryType;
 use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
+use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Facades\Cairn;
 use Divoto\Cairn\Reporting\Report;
+use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
 use Divoto\Cairn\Widgets\Filters;
+use Divoto\Cairn\Widgets\Shipped\ExitPages;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
+use Divoto\Cairn\Widgets\Shipped\Languages;
 use Divoto\Cairn\Widgets\Shipped\Overview;
+use Divoto\Cairn\Widgets\Shipped\ScreenSizes;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 use Divoto\Cairn\Widgets\Widget;
 use Divoto\Cairn\Widgets\WidgetLayout;
 use Divoto\Cairn\Widgets\WidgetRegistry;
@@ -457,7 +464,7 @@ it('caps a filter value read from the URL', function (): void {
 */
 
 it('registers every shipped widget', function (): void {
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(15);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(18);
 });
 
 /**
@@ -475,7 +482,7 @@ it('falls back to the shipped widgets when config predates the key', function ()
         // No 'widgets' key, exactly as an older published config would have.
     ]);
 
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(15);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(18);
 
     cairnTest()->get('/cairn')->assertOk()->assertSee('Top routes');
 });
@@ -510,6 +517,367 @@ it('skips a widget class that cannot be resolved', function (): void {
     config()->set('cairn.dashboard.widgets', [TopRoutes::class, 'Divoto\Cairn\NotAWidget']);
 
     expect(app(WidgetRegistry::class)->all())->toHaveCount(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Landing and exit pages
+|--------------------------------------------------------------------------
+|
+| The first dimension measured from cairn_sessions rather than cairn_entries,
+| and therefore the first one that can report a bounce rate per value. In
+| 1.1.0 a session metric under any filter rendered as an em dash, because the
+| session table carried no dimension columns to narrow by. For these two it
+| does, and this section is where that reversal is pinned down.
+|
+*/
+
+/**
+ * Two visits begin on /pricing and one of them bounces; one begins on /docs
+ * and bounces. Every expectation below is that hand count.
+ */
+function seedVisits(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    foreach ([
+        ['/pricing', '/checkout', 3, false, 180],
+        ['/pricing', '/pricing', 1, true, 0],
+        ['/docs', '/docs', 1, true, 0],
+    ] as $index => [$entry, $exit, $pages, $bounce, $seconds]) {
+        $at = $today->addMinutes($index);
+
+        $connection->table(Tables::sessions())->insert([
+            'id' => Binary::bind($connection, random_bytes(8)),
+            'visitor' => Binary::bind($connection, random_bytes(16)),
+            'started_at' => $at->toDateTimeString(),
+            'last_activity_at' => $at->addSeconds($seconds)->toDateTimeString(),
+            'page_count' => $pages,
+            'duration_seconds' => $seconds,
+            'entry_url' => $entry,
+            'exit_url' => $exit,
+            'is_bounce' => $bounce,
+            'tenant_id' => '',
+        ]);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('renders the landing pages panel', function (): void {
+    seedVisits();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Landing pages')
+        ->assertSee('/pricing');
+});
+
+/**
+ * The acceptance criterion for the block: a bounce rate per page that matches
+ * a hand count of the session table. Two visits began on /pricing, one of them
+ * bounced, and the average duration is 180 seconds over the two.
+ */
+it('reports a bounce rate per landing page', function (): void {
+    seedVisits();
+
+    $row = app(LandingPages::class)->rows(new Filters(range: 'today'))->first();
+
+    expect($row?->dimension('entry_url'))->toBe('/pricing')
+        ->and($row?->metric(Metric::Sessions))->toBe(2.0)
+        ->and($row?->metric(Metric::BounceRate))->toBe(0.5)
+        ->and($row?->metric(Metric::AvgSessionDuration))->toBe(90.0);
+});
+
+/**
+ * The reversal. Under 1.1.0 every filter withheld sessions and bounce rate,
+ * because the session table carried nothing to narrow by and a site-wide
+ * figure wearing a filter's label is a lie. A landing page is a column on that
+ * table, so this is the first filter that can honestly narrow them.
+ */
+it('narrows the headline sessions and bounce rate to a landing page', function (): void {
+    seedVisits();
+
+    $row = app(Overview::class)->rows(new Filters(range: 'today', entryPage: '/pricing'))->first();
+
+    expect($row?->metric(Metric::Sessions))->toBe(2.0)
+        ->and($row?->metric(Metric::BounceRate))->toBe(0.5);
+});
+
+/**
+ * The other half of the same rule: a country filter still withholds them, and
+ * for the same reason it always did. Nothing about this block widened that.
+ */
+it('still withholds sessions from a filter measured on entries', function (): void {
+    seedTraffic();
+
+    expect(app(Overview::class)->rows(new Filters(range: 'today', country: 'GB'))
+        ->first()?->metric(Metric::Sessions))->toBeNull();
+});
+
+/**
+ * A landing page rollup carries no events, conversions or vitals — those are
+ * entry-derived and the session table never saw them. Asking for one under
+ * this filter must withhold it rather than answer site-wide.
+ */
+it('withholds an entry-derived metric under a landing page filter', function (): void {
+    seedVisits();
+
+    expect(Metric::Events->isMeasuredFor(Dimension::EntryPage))->toBeFalse()
+        ->and(Metric::AvgLcp->isMeasuredFor(Dimension::EntryPage))->toBeFalse()
+        // Pageviews survives: the session row counts the pages in the visit.
+        ->and(Metric::Pageviews->isMeasuredFor(Dimension::EntryPage))->toBeTrue();
+});
+
+it('links a landing page row to the filtered page', function (): void {
+    seedVisits();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('entry_url=%2Fpricing', escape: false);
+});
+
+it('renders the exit pages panel when it is enabled', function (): void {
+    seedVisits();
+
+    config()->set('cairn.dashboard.widgets', [ExitPages::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Exit pages')
+        ->assertSee('/checkout');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Core Web Vitals
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Seed traffic with measured vitals on one route and none on another, which is
+ * what an installation actually looks like: the observers are Chromium-only
+ * and the beacon is optional.
+ */
+function seedVitalsTraffic(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+
+    foreach ([
+        ['pricing.index', 1800, 90, 40],
+        ['pricing.index', 4200, 350, 250],
+        ['home.index', null, null, null],
+    ] as $index => [$route, $lcp, $inp, $cls]) {
+        /** @var Collection<int, Entry> $collection */
+        $collection = new Collection([new Entry(
+            occurredAt: $today->addMinutes($index),
+            type: EntryType::Pageview,
+            visitor: random_bytes(16),
+            route: $route,
+            url: '/'.$route,
+            durationMs: 20,
+            lcpMs: $lcp,
+            inpMs: $inp,
+            clsMilli: $cls,
+        )]);
+
+        app(Storage::class)->store($collection);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('renders the web vitals panel', function (): void {
+    seedVitalsTraffic();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Core Web Vitals')
+        ->assertSee('pricing.index');
+});
+
+/**
+ * The acceptance criterion for the block: one of the two measured page views
+ * met every threshold, so each good share is exactly half — computed from the
+ * stored good count over the stored sample count, not averaged from per-bucket
+ * shares.
+ */
+it('reports the good share as a ratio of the counts that were stored', function (): void {
+    seedVitalsTraffic();
+
+    $row = app(WebVitals::class)->rows(new Filters(range: 'today'))->first();
+
+    expect($row?->metric(Metric::LcpGoodRate))->toBe(0.5)
+        ->and($row?->metric(Metric::InpGoodRate))->toBe(0.5)
+        ->and($row?->metric(Metric::ClsGoodRate))->toBe(0.5)
+        // 6000ms over two samples, 440ms over two, 290 thousandths over two.
+        ->and($row?->metric(Metric::AvgLcp))->toBe(3000.0)
+        ->and($row?->metric(Metric::AvgInp))->toBe(220.0)
+        ->and($row?->metric(Metric::AvgCls))->toBe(145.0);
+});
+
+/**
+ * A route nothing measured is left out rather than rendered as a row of em
+ * dashes, which takes as much space as an answer while saying nothing.
+ */
+it('leaves out a route with no vitals samples', function (): void {
+    seedVitalsTraffic();
+
+    $routes = app(WebVitals::class)->rows(new Filters(range: 'today'))
+        ->map(static fn (ReportRow $row): string => (string) $row->dimension('route'))
+        ->values()
+        ->all();
+
+    expect($routes)->toContain('pricing.index');
+    expect(in_array('home.index', $routes, true))->toBeFalse();
+});
+
+/**
+ * Without the beacon nothing measures a vital at all. An empty panel has to
+ * say that, rather than leaving a reader to conclude their pages are slow.
+ */
+it('tells the reader the vitals panel needs the beacon', function (): void {
+    config()->set('cairn.dashboard.widgets', [WebVitals::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('This needs the optional JavaScript beacon, which is not enabled.');
+});
+
+/*
+|--------------------------------------------------------------------------
+| The opt-in panels
+|--------------------------------------------------------------------------
+|
+| Languages and Screen sizes report two things Cairn recorded from 1.0 and
+| never showed. Both ship as classes and stay out of the default widget list
+| — fifteen panels is already a long page — so every test here enables them
+| the way a deployer would.
+|
+*/
+
+/**
+ * Seed traffic carrying the client-side dimensions. Screen class arrives only
+ * with the beacon, so one entry is left without it to stand for a pageview
+ * recorded before the beacon reported.
+ */
+function seedClientTraffic(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+
+    foreach ([
+        ['en-GB', ScreenClass::Large],
+        ['en-GB', ScreenClass::Large],
+        ['de', ScreenClass::Small],
+        ['fr', ScreenClass::Unknown],
+    ] as $index => [$language, $screenClass]) {
+        /** @var Collection<int, Entry> $collection */
+        $collection = new Collection([new Entry(
+            occurredAt: $today->addMinutes($index),
+            type: EntryType::Pageview,
+            visitor: random_bytes(16),
+            route: 'pricing.index',
+            url: '/pricing',
+            screenClass: $screenClass,
+            language: $language,
+            durationMs: 20,
+        )]);
+
+        app(Storage::class)->store($collection);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('renders the languages and screen sizes panels when they are enabled', function (): void {
+    seedClientTraffic();
+
+    config()->set('cairn.dashboard.widgets', [Languages::class, ScreenSizes::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Languages')
+        ->assertSee('Screen sizes')
+        ->assertSee('en-GB')
+        ->assertSee('Large (1024–1439px)', escape: false);
+});
+
+/**
+ * A tag is shown as recorded. The recorder keeps the first tag of the header
+ * and truncates it, so "en-GB" is what was measured and folding it into "en"
+ * on the way out would report something nobody counted.
+ */
+it('shows a language tag as it was recorded', function (): void {
+    seedClientTraffic();
+
+    /** @var list<string> $tags */
+    $tags = app(Languages::class)->rows(new Filters(range: 'today'))
+        ->map(static fn (ReportRow $row): string => (string) $row->dimension('language'))
+        ->values()
+        ->all();
+
+    expect($tags)->toContain('en-GB');
+    expect(in_array('en', $tags, true))->toBeFalse();
+});
+
+/**
+ * The unknown bucket is a fact about measurement, not about screens. On a
+ * ranked table it reads as a size, and often as the largest one.
+ */
+it('drops the unknown bucket from the screen sizes panel', function (): void {
+    seedClientTraffic();
+
+    $rows = app(ScreenSizes::class)->rows(new Filters(range: 'today'));
+
+    expect($rows->pluck('dimensions.screen_class')->all())
+        ->not->toContain(ScreenClass::Unknown->value)
+        ->and($rows)->toHaveCount(2);
+});
+
+/**
+ * Without the beacon nothing measures a viewport at all, so the panel says so
+ * rather than showing a zero — which would read as "everybody has an unknown
+ * screen" instead of "nothing is being measured".
+ */
+it('tells the reader the screen sizes panel needs the beacon', function (): void {
+    config()->set('cairn.dashboard.widgets', [ScreenSizes::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('This needs the optional JavaScript beacon, which is not enabled.');
+});
+
+/**
+ * Both are clickable, which is only honest because both are rolled up: the
+ * filter reaches the headline totals rather than narrowing one panel while
+ * the rest of the page goes on answering site-wide.
+ */
+it('narrows the headline totals to a language and to a screen size', function (Filters $filters, float $expected): void {
+    seedClientTraffic();
+
+    expect(app(Overview::class)->rows($filters)->first()?->metric(Metric::Pageviews))
+        ->toBe($expected);
+})->with([
+    // Of the four seeded pageviews: two in en-GB, two on a large screen.
+    'language' => [fn (): Filters => new Filters(range: 'today', language: 'en-GB'), 2.0],
+    'screen class' => [
+        fn (): Filters => new Filters(range: 'today', screenClass: (string) ScreenClass::Large->value),
+        2.0,
+    ],
+]);
+
+it('links a language row to the filtered page', function (): void {
+    seedClientTraffic();
+
+    config()->set('cairn.dashboard.widgets', [Languages::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('language=en-GB', escape: false);
 });
 
 it('renders with a reordered widget list', function (): void {

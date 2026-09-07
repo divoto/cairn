@@ -67,6 +67,12 @@ final readonly class Entry
         public ?int $durationMs = null,
         public ?int $timeOnPage = null,
         public ?int $scrollDepth = null,
+        /** Largest Contentful Paint in milliseconds, from the beacon. */
+        public ?int $lcpMs = null,
+        /** Interaction to Next Paint in milliseconds, from the beacon. */
+        public ?int $inpMs = null,
+        /** Cumulative Layout Shift times a thousand, from the beacon. */
+        public ?int $clsMilli = null,
         public ?string $value = null,
         public ?array $properties = null,
         public ?string $subjectType = null,
@@ -146,6 +152,9 @@ final readonly class Entry
             durationMs: $this->durationMs,
             timeOnPage: $this->timeOnPage,
             scrollDepth: $this->scrollDepth,
+            lcpMs: $this->lcpMs,
+            inpMs: $this->inpMs,
+            clsMilli: $this->clsMilli,
             value: $this->value,
             properties: $properties ?? $this->properties,
             subjectType: $this->subjectType,

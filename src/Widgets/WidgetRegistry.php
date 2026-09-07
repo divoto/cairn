@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Divoto\Cairn\Widgets;
 
+use Divoto\Cairn\CairnServiceProvider;
 use Divoto\Cairn\Widgets\Shipped\ActivityFeed;
 use Divoto\Cairn\Widgets\Shipped\Browsers;
 use Divoto\Cairn\Widgets\Shipped\Campaigns;
@@ -12,13 +13,16 @@ use Divoto\Cairn\Widgets\Shipped\Conversions;
 use Divoto\Cairn\Widgets\Shipped\Countries;
 use Divoto\Cairn\Widgets\Shipped\Devices;
 use Divoto\Cairn\Widgets\Shipped\Events;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
 use Divoto\Cairn\Widgets\Shipped\Mediums;
 use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\Referrers;
 use Divoto\Cairn\Widgets\Shipped\Sources;
+use Divoto\Cairn\Widgets\Shipped\TopContent;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -46,6 +50,13 @@ final readonly class WidgetRegistry
      * An explicitly empty array is still honoured: that is somebody choosing to
      * show nothing, which is different from never having been asked.
      *
+     * Since 1.2 {@see CairnServiceProvider::mergeCairnConfig()}
+     * fills the key in at merge time, so this rarely fires. It is kept because
+     * the merge is skipped entirely when configuration is cached: an
+     * application that ran `config:cache` before upgrading is running on a
+     * cached array built by the previous version, and this is what stands
+     * between that and an empty dashboard.
+     *
      * @var list<class-string<Widget>>
      */
     public const DEFAULTS = [
@@ -67,6 +78,9 @@ final readonly class WidgetRegistry
         // A wide panel in the middle of the grid leaves a gap beside the panel
         // before it, because nothing narrow can be pulled up to fill the row.
         TopRoutes::class,
+        LandingPages::class,
+        TopContent::class,
+        WebVitals::class,
         ActivityFeed::class,
     ];
 

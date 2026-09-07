@@ -54,15 +54,66 @@ enum Dimension: string
 
     case Language = 'language';
 
+    /**
+     * The page a visit started on, from `cairn_sessions`.
+     *
+     * Not a column on an entry: a landing page is a fact about a visit, and
+     * the session table is where bounces and durations live.
+     */
+    case EntryPage = 'entry_url';
+
+    /** The page a visit ended on, from `cairn_sessions`. */
+    case ExitPage = 'exit_url';
+
+    /**
+     * The model an entry was recorded against.
+     *
+     * The only dimension without a single column behind it: it is the pair
+     * `subject_type` and `subject_id`, keyed as `{morph alias}:{id}` so that
+     * renaming a class does not orphan its history.
+     */
+    case Subject = 'subject';
+
     /** The `name` column, when the entry is an event or a conversion. */
     case EventName = 'name';
 
     /**
      * The column on `cairn_entries` this dimension reads from.
+     *
+     * Subject is the exception: it is measured from two columns rather than
+     * one, and storage branches for it rather than asking here.
+     * {@see self::isComposite()}
      */
     public function column(): string
     {
         return $this->value;
+    }
+
+    /**
+     * Whether this dimension is built from more than one column.
+     *
+     * Only Subject, which is `subject_type` and `subject_id` combined into a
+     * single key. Keeping the exception named means the generic grouping path
+     * stays untouched by it.
+     */
+    public function isComposite(): bool
+    {
+        return $this === self::Subject;
+    }
+
+    /**
+     * Which table this dimension's rollup is measured from.
+     *
+     * Almost everything is a column on `cairn_entries`. Landing and exit pages
+     * are columns on `cairn_sessions` instead, which is what lets them report
+     * a bounce rate — a number the entry table cannot produce at all.
+     */
+    public function source(): DimensionSource
+    {
+        return match ($this) {
+            self::EntryPage, self::ExitPage => DimensionSource::Sessions,
+            default => DimensionSource::Entries,
+        };
     }
 
     /**
@@ -86,6 +137,11 @@ enum Dimension: string
             self::DeviceType,
             self::Browser,
             self::OperatingSystem,
+            self::ScreenClass,
+            self::Language,
+            self::EntryPage,
+            self::ExitPage,
+            self::Subject,
             self::EventName => true,
             default => false,
         };
@@ -196,6 +252,9 @@ enum Dimension: string
             self::OperatingSystem => 'Operating system',
             self::ScreenClass => 'Screen size',
             self::Language => 'Language',
+            self::EntryPage => 'Landing page',
+            self::ExitPage => 'Exit page',
+            self::Subject => 'Content',
             self::EventName => 'Event',
         };
     }

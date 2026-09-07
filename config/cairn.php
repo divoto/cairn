@@ -16,13 +16,16 @@ use Divoto\Cairn\Widgets\Shipped\Conversions as ConversionsWidget;
 use Divoto\Cairn\Widgets\Shipped\Countries;
 use Divoto\Cairn\Widgets\Shipped\Devices;
 use Divoto\Cairn\Widgets\Shipped\Events;
+use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\LiveVisitors;
 use Divoto\Cairn\Widgets\Shipped\Mediums;
 use Divoto\Cairn\Widgets\Shipped\OperatingSystems;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\Referrers;
 use Divoto\Cairn\Widgets\Shipped\Sources;
+use Divoto\Cairn\Widgets\Shipped\TopContent;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
+use Divoto\Cairn\Widgets\Shipped\WebVitals;
 
 return [
 
@@ -355,9 +358,10 @@ return [
             // pages and one fewer endpoint accepting input from browsers.
             'enabled' => true,
 
-            // Emit the <script> tag automatically on Blade responses. With
-            // this false you can still place it yourself with the @cairn
-            // directive — useful if you want it only on some pages.
+            // The tag is placed with the @cairn directive, before </body> in
+            // your layout. Automatic injection into every Blade response is
+            // not available yet; this switch is reserved for it and is read
+            // by nothing.
             'auto_inject' => false,
         ],
 
@@ -390,6 +394,13 @@ return [
         // The panels to draw, in order. Remove one, reorder them, or add your
         // own by subclassing Divoto\Cairn\Widgets\Widget — or, for a ranked
         // table of a single dimension, Widgets\DimensionWidget.
+        //
+        // Two more ship ready to use and are left out only to keep this
+        // page short — add them here if you want them:
+        //
+        //   Divoto\Cairn\Widgets\Shipped\Languages::class
+        //   Divoto\Cairn\Widgets\Shipped\ScreenSizes::class  (needs the beacon)
+        //   Divoto\Cairn\Widgets\Shipped\ExitPages::class
         'widgets' => [
             Overview::class,
             LiveVisitors::class,
@@ -408,6 +419,9 @@ return [
             // Full-width panels last: one placed mid-grid leaves a gap beside
             // whatever narrow panel precedes it.
             TopRoutes::class,
+            LandingPages::class,
+            TopContent::class,
+            WebVitals::class,
             ActivityFeed::class,
         ],
     ],
