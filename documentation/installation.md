@@ -129,8 +129,17 @@ and reads no cookies. Under a `script-src` Content Security Policy, allow it
 by hash: `Divoto\Cairn\Support\Beacon::cspHash()` returns the value for the
 header.
 
+The endpoint is public by design: `sendBeacon()` cannot carry a CSRF token,
+so the route runs without that check. In its place the request must be one a
+browser attributes to your own site — `Sec-Fetch-Site` must be `same-origin`
+when present, and otherwise the `Origin` host must match — and every
+submission must correspond to a pageview the server itself recorded for that
+visitor within the last hour. Whatever a caller sends, the only thing the
+endpoint can do is fill in the measurement columns of that one row, once.
+
 Without it the dashboard still works. The panels that read these measurements
-show an explanatory empty state rather than a zero.
+show an explanatory empty state rather than a zero, and say whether the beacon
+is off or simply has not been reported to in the selected period.
 
 ## Optional: Redis
 

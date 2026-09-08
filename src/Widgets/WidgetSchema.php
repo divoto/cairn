@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Widgets;
 
 use Divoto\Cairn\Enums\Metric;
+use Divoto\Cairn\Support\Beacon;
 
 /**
  * How a widget wants to be drawn.
@@ -52,7 +53,11 @@ final readonly class WidgetSchema
      *
      * A widget that needs the beacon says so explicitly rather than showing a
      * zero — reporting "0 seconds average time on page" when nothing is
-     * measuring it is worse than saying nothing.
+     * measuring it is worse than saying nothing. It also says which of two
+     * different things an empty panel means: the beacon is off, or it is on
+     * and no browser has reported in this period. Telling somebody who has
+     * just placed the tag that it is not enabled sends them back to the
+     * layout when the thing to check is the period, or the browser.
      */
     public function emptyMessage(): string
     {
@@ -60,8 +65,12 @@ final readonly class WidgetSchema
             return $this->empty;
         }
 
-        return $this->requiresBeacon
-            ? 'This needs the optional JavaScript beacon, which is not enabled.'
-            : 'Nothing recorded in this period.';
+        if (! $this->requiresBeacon) {
+            return 'Nothing recorded in this period.';
+        }
+
+        return Beacon::enabled()
+            ? 'The optional JavaScript beacon is enabled, but no browser has reported a measurement in this period.'
+            : 'This needs the optional JavaScript beacon, which is not enabled.';
     }
 }

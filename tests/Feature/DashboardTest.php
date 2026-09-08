@@ -14,6 +14,7 @@ use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Enums\ScreenClass;
 use Divoto\Cairn\Facades\Cairn;
+use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Reporting\Report;
 use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Tables;
@@ -741,10 +742,25 @@ it('leaves out a route with no vitals samples', function (): void {
  */
 it('tells the reader the vitals panel needs the beacon', function (): void {
     config()->set('cairn.dashboard.widgets', [WebVitals::class]);
+    config()->set('cairn.recorders.'.ClientMetrics::class.'.enabled', false);
 
     cairnTest()->get('/cairn')
         ->assertOk()
         ->assertSee('This needs the optional JavaScript beacon, which is not enabled.');
+});
+
+/**
+ * With the beacon on and nothing measured yet, "not enabled" is wrong and
+ * sends the reader back to a layout that is already correct. The panel says
+ * which of the two it is.
+ */
+it('tells the reader the beacon is on but has measured nothing in the period', function (): void {
+    config()->set('cairn.dashboard.widgets', [WebVitals::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('The optional JavaScript beacon is enabled, but no browser has reported a measurement in this period.')
+        ->assertDontSee('which is not enabled');
 });
 
 /*
@@ -845,6 +861,7 @@ it('drops the unknown bucket from the screen sizes panel', function (): void {
  */
 it('tells the reader the screen sizes panel needs the beacon', function (): void {
     config()->set('cairn.dashboard.widgets', [ScreenSizes::class]);
+    config()->set('cairn.recorders.'.ClientMetrics::class.'.enabled', false);
 
     cairnTest()->get('/cairn')
         ->assertOk()

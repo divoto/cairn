@@ -9,7 +9,10 @@ use Divoto\Cairn\Support\Tables;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
@@ -310,6 +313,108 @@ it('records no vitals at all when the browser measured none', function (): void 
  * Without a matching server-side entry, anyone could POST arbitrary numbers
  * for arbitrary pages.
  */
+it('lifts the CSRF check whichever class the framework runs it as', function (): void {
+    // sendBeacon() carries no token. Laravel 13 runs the check as
+    // PreventRequestForgery with ValidateCsrfToken as a subclass; Laravel 12
+    // runs ValidateCsrfToken itself. The router lifts a middleware only when
+    // it is the named class or a subclass of it, so the exclusion must name
+    // the base of both hierarchies or the endpoint answers 419 on one of them.
+    $route = app('router')->getRoutes()->getByName('cairn.collect');
+
+    expect($route)->toBeInstanceOf(RoutingRoute::class);
+    assert($route instanceof RoutingRoute);
+
+    // The class a given framework does not define is named as a string, so
+    // it is skipped here rather than failing static analysis.
+    $csrf = array_filter([
+        'Illuminate\\Foundation\\Http\\Middleware\\PreventRequestForgery',
+        ValidateCsrfToken::class,
+        VerifyCsrfToken::class,
+    ], class_exists(...));
+
+    $resolved = app('router')->resolveMiddleware(
+        $route->gatherMiddleware(),
+        $route->excludedMiddleware(),
+    );
+
+    foreach ($resolved as $middleware) {
+        if (! is_string($middleware) || ! class_exists($middleware)) {
+            continue;
+        }
+
+        foreach ($csrf as $class) {
+            expect(is_a($middleware, $class, true))
+                ->toBeFalse("{$middleware} still runs on the collect route");
+        }
+    }
+});
+
+it('drops a submission the browser says came from another site', function (): void {
+    recordPageview();
+
+    cairnTest()
+        ->withHeaders(['User-Agent' => beaconAgent(), 'Sec-Fetch-Site' => 'cross-site'])
+        ->postJson('/cairn/collect', ['url' => '/pricing', 'seconds' => 42])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+it('drops a submission whose Origin is another host', function (): void {
+    recordPageview();
+
+    cairnTest()
+        ->withHeaders(['User-Agent' => beaconAgent(), 'Origin' => 'https://attacker.example'])
+        ->postJson('/cairn/collect', ['url' => '/pricing', 'seconds' => 42])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+it('believes Sec-Fetch-Site over Origin when both are present', function (): void {
+    recordPageview();
+
+    // A same-site subdomain is still not this origin.
+    cairnTest()
+        ->withHeaders([
+            'User-Agent' => beaconAgent(),
+            'Sec-Fetch-Site' => 'same-site',
+            'Origin' => 'http://localhost',
+        ])
+        ->postJson('/cairn/collect', ['url' => '/pricing', 'seconds' => 42])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBeNull();
+});
+
+it('accepts a submission the browser says came from this site', function (): void {
+    recordPageview();
+
+    // The scheme is deliberately not the one the test request uses: behind a
+    // proxy it differs from what the visitor saw, so only the host counts.
+    cairnTest()
+        ->withHeaders([
+            'User-Agent' => beaconAgent(),
+            'Sec-Fetch-Site' => 'same-origin',
+            'Origin' => 'https://localhost',
+        ])
+        ->postJson('/cairn/collect', ['url' => '/pricing', 'seconds' => 42])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBe(42);
+});
+
+it('accepts a same-host Origin from a browser that sends no Sec-Fetch-Site', function (): void {
+    recordPageview();
+
+    cairnTest()
+        ->withHeaders(['User-Agent' => beaconAgent(), 'Origin' => 'http://LOCALHOST'])
+        ->postJson('/cairn/collect', ['url' => '/pricing', 'seconds' => 42])
+        ->assertNoContent();
+
+    expect(beaconEntries()->value('time_on_page'))->toBe(42);
+});
+
 it('rejects measurements for a page the server never saw', function (): void {
     recordPageview();
 

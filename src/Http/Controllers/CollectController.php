@@ -26,16 +26,21 @@ use Throwable;
  * makes it the only place a stranger can try to write to the analytics tables.
  * It is treated accordingly:
  *
- * 1. **The privacy gate runs first.** A visitor who sent DNT, GPC or opted out
+ * 1. **The request must come from this site.** The route runs without the
+ *    CSRF check, because `sendBeacon()` cannot carry a token, so the browser's
+ *    own `Sec-Fetch-Site` and `Origin` headers stand in for it: a browser
+ *    sets them and a page cannot forge them, and a POST that names another
+ *    site as its source is dropped.
+ * 2. **The privacy gate runs next.** A visitor who sent DNT, GPC or opted out
  *    is not measured here either.
- * 2. **Every field is validated and clamped.** Nothing is stored as sent.
- * 3. **The payload must match a real pageview.** The visitor hash is derived
+ * 3. **Every field is validated and clamped.** Nothing is stored as sent.
+ * 4. **The payload must match a real pageview.** The visitor hash is derived
  *    from the request itself, never taken from the body, and an entry for that
  *    visitor and URL must already exist within the last few minutes. Without
  *    that, anyone could POST arbitrary numbers for arbitrary pages.
- * 4. **One submission per page view.** A replay is dropped rather than
+ * 5. **One submission per page view.** A replay is dropped rather than
  *    doubling a page's measurements.
- * 5. **Rate limited per visitor.**
+ * 6. **Rate limited per visitor.**
  *
  * The response is always 204, whatever happened. Telling a caller which of the
  * checks rejected them would turn this into an oracle for probing the rest.
@@ -84,6 +89,10 @@ final readonly class CollectController
             return;
         }
 
+        if (! $this->fromThisSite($request)) {
+            return;
+        }
+
         if (! $this->gate->allows($request)) {
             return;
         }
@@ -113,6 +122,39 @@ final readonly class CollectController
         }
 
         $this->apply($entryId, $payload);
+    }
+
+    /**
+     * Whether the browser says this POST was made by a page on this site.
+     *
+     * `Sec-Fetch-Site` is set by the browser on every request and cannot be
+     * written by script, so it is believed when present. `Origin` is the
+     * older equivalent and is compared by host alone: behind a proxy the
+     * scheme Laravel sees is not always the one the visitor used, and a
+     * mismatch there would drop every honest measurement on such a site.
+     *
+     * A request carrying neither header is let through. Nothing in a browser
+     * omits both on a POST, so the only such caller is a script, and a script
+     * can set whichever headers it likes — the checks that follow are the
+     * ones that bound what a script can do.
+     */
+    private function fromThisSite(Request $request): bool
+    {
+        $site = $request->headers->get('Sec-Fetch-Site');
+
+        if (is_string($site) && $site !== '') {
+            return $site === 'same-origin';
+        }
+
+        $origin = $request->headers->get('Origin');
+
+        if (! is_string($origin) || $origin === '') {
+            return true;
+        }
+
+        $host = parse_url($origin, PHP_URL_HOST);
+
+        return is_string($host) && strcasecmp($host, $request->getHost()) === 0;
     }
 
     /**

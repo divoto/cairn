@@ -12,6 +12,47 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [1.2.1] - 2026-09-08
+
+A patch release for anyone running the beacon on Laravel 13, where it has
+been silently rejected since the framework renamed its CSRF middleware. The
+collect endpoint also gains a check on where a submission came from, and the
+panels that depend on the beacon now say whether it is off or merely quiet.
+
+### Fixed
+
+- **The beacon was rejected with a 419 on Laravel 13.** The framework renamed
+  its CSRF middleware to `PreventRequestForgery` and made `ValidateCsrfToken` a
+  subclass of it. The collect route lifted the check by naming the subclass,
+  which the router does not match against the parent, so every measurement
+  the beacon sent on Laravel 13 was answered with "Page Expired" and no time
+  on page, scroll depth, screen size or Core Web Vital was ever stored. The
+  route now names both classes. Laravel 12 is unaffected.
+
+### Security
+
+- **The collect endpoint checks where a submission came from.** It runs
+  without the CSRF check because `sendBeacon()` cannot carry a token, so it
+  now reads the two headers a browser sets and a page cannot forge:
+  `Sec-Fetch-Site` must be `same-origin` when present, and otherwise the
+  `Origin` host must be the site's own. A POST that a browser attributes to
+  another site is dropped before anything else runs. A request carrying
+  neither header, which no browser sends on a POST, is left to the checks
+  that already bound what a script can do: a matching recent pageview for
+  the same visitor, one submission per pageview, and the per-visitor rate
+  limit.
+
+### Changed
+
+- **An empty beacon panel says which of two things it means.** Core Web
+  Vitals, time on page, scroll depth and screen sizes all showed "This needs
+  the optional JavaScript beacon, which is not enabled" whenever they had no
+  rows for the selected period, including when the beacon was enabled and
+  had simply not been reported to yet, or the visitor's own browser was
+  sending Do Not Track. The panel now says the beacon is enabled and no
+  browser has reported in the period, and keeps the old wording for when it
+  is actually off.
+
 ## [1.2.0] - 2026-09-07
 
 Four things Cairn already recorded and never showed, and one check that
@@ -450,6 +491,8 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[1.2.1]: https://github.com/divoto/cairn/releases/tag/v1.2.1
 
 [1.2.0]: https://github.com/divoto/cairn/releases/tag/v1.2.0
 
