@@ -23,6 +23,11 @@ final class NullUniqueCounter implements UniqueCounter
         return 0;
     }
 
+    public function counts(array $days, array $dimensions): array
+    {
+        return array_fill_keys($dimensions, array_fill_keys($days, 0));
+    }
+
     public function prune(string $beforeDay): int
     {
         return 0;

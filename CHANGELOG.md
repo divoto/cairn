@@ -12,6 +12,87 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [Unreleased]
+
+The dashboard's cost no longer grows with the amount of traffic it is
+describing. Nothing about what is measured, stored or reported changes —
+these are the same numbers, read a different way — with one exception, noted
+under Fixed, where a chart was reporting the wrong ones.
+
+Measured on MySQL 8, through the package's own reporting layer, against
+thirty days of forty routes rolled up at both day and hour detail, with
+246,000 visitor-day rows:
+
+| | Before | After |
+| --- | --- | --- |
+| Overview totals | 31 queries, 9.6ms | 2 queries, 4.8ms |
+| Overview chart, 30 days | 90 queries, 30.9ms | 2 queries, 8.6ms |
+| Chart at hourly detail | 720 queries, 260.6ms | 1 query, 65.9ms |
+| Ranked table with visitors | 1,201 queries, 359.5ms | 2 queries, 142.8ms |
+
+The index change was measured separately, and on a larger table: ninety days
+of fifteen materialised dimensions, 748,000 aggregate rows. One dashboard's
+worth of aggregate reads — sixteen queries — goes from 0.68s to 0.04s.
+
+The query counts matter more than the milliseconds. All of this was measured
+against a database on the same machine, where a round trip is about a fifth
+of a millisecond; against a managed database a millisecond or two away, the
+two thousand queries a dashboard used to run were seconds of waiting before
+any of the work started.
+
+The ranked table is the one figure still worth reading twice. Its remaining
+142.8ms is almost entirely the exact `COUNT(*)` over `cairn_visitor_days` —
+the same report without unique visitors takes 22.3ms — and that count scales
+with how much traffic the site has, because the table holds a row per visitor
+per dimension per day. Batching turned thousands of those counts into one; it
+did not make the counting itself cheaper.
+
+### Fixed
+
+- **Every point on a visitor chart counted the following day as well.** The
+  window handed to the unique counter is inclusive at both ends, like every
+  other window in the report builder, but a bucket's natural end is the start
+  of the next one — so each bucket summed its own day and its successor. A
+  daily chart reported each day's visitors plus tomorrow's, roughly doubling
+  the line, and only the final point was right. The same bound also flagged
+  every daily bucket as approximate when a single day's count is exact.
+  Totals, which use the window the caller actually asked for, were never
+  affected, so the chart disagreed with the headline figure above it.
+
+### Changed
+
+- **The dashboard reads a chart in one query instead of one per point.** The
+  report builder asked storage once per bucket, so a thirty-day chart was
+  thirty queries and the same range at hourly detail was seven hundred and
+  twenty — the cost of a chart grew with how finely it was cut. It now reads
+  the range once and splits it into buckets in PHP.
+- **Unique visitors are counted for a whole report in one request.** The
+  counter was read once per row per day, which on a ranked table over a month
+  is the number of rows times thirty. The reporting layer now asks for the
+  whole grid at once.
+- **`cairn_aggregates` is indexed for the query the dashboard actually
+  runs.** The read index covered `(period, type, bucket)` and left out
+  `tenant_id` and `aggregate`, so every panel narrowed to a period and a
+  metric and then discarded most of what it had read. On the site-wide panels
+  MySQL costed that index above a table scan and took the scan — 748,000 rows
+  read to return 90. A new migration replaces it with
+  `(tenant_id, aggregate, period, type, bucket)`: the equality columns first,
+  the bucket range last. Publish and run migrations to pick it up.
+
+### Added
+
+- **`UniqueCounter::counts()`**, which answers for many days and many
+  dimension values at once. Both shipped drivers implement it in a bounded
+  number of round trips — one grouped query on the database driver, one
+  pipeline of `PFCOUNT`s on the Redis driver, which cannot be collapsed into
+  a single command because `PFCOUNT` over several keys returns the
+  cardinality of their union rather than the sum this metric is defined as.
+
+  **This is a breaking change for anyone who has written their own
+  `UniqueCounter`**, which is why it is listed here rather than shipped in a
+  patch. Implementations that only ever ran against Cairn's own drivers are
+  unaffected.
+
 ## [1.2.1] - 2026-09-08
 
 A patch release for anyone running the beacon on Laravel 13, where it has

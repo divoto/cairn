@@ -8,6 +8,8 @@ use Divoto\Cairn\Contracts\UniqueCounter;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Redis\Factory as Redis;
 use Illuminate\Redis\Connections\Connection;
+use Illuminate\Redis\Connections\PhpRedisConnection;
+use Redis as PhpRedis;
 use Throwable;
 
 /**
@@ -76,6 +78,87 @@ final readonly class RedisUniqueCounter implements UniqueCounter
 
             return 0;
         }
+    }
+
+    public function counts(array $days, array $dimensions): array
+    {
+        $counts = [];
+        $zeroes = array_fill_keys($days, 0);
+
+        foreach ($dimensions as $dimension) {
+            $counts[$dimension] = $zeroes;
+        }
+
+        if ($days === [] || $dimensions === []) {
+            return $counts;
+        }
+
+        try {
+            // One PFCOUNT per key. Passing every key to a single PFCOUNT would
+            // be one command instead of many, and would answer a different
+            // question: PFCOUNT over several keys is the cardinality of their
+            // union, so thirty days of one returning visitor would come back
+            // as one visitor rather than as thirty. Summing daily counts is
+            // the definition of the metric, not an approximation of it.
+            //
+            // So the commands stay separate and the round trips are what get
+            // collapsed, by pipelining them.
+            $pairs = [];
+
+            foreach ($dimensions as $dimension) {
+                foreach ($days as $day) {
+                    $pairs[] = [$dimension, $day];
+                }
+            }
+
+            $connection = $this->connection();
+            $results = $this->pipeline($connection, $pairs);
+
+            foreach ($pairs as $index => [$dimension, $day]) {
+                $value = $results[$index] ?? null;
+
+                $counts[$dimension][$day] = is_numeric($value)
+                    ? (int) $value
+                    : $this->count($day, $dimension);
+            }
+
+            return $counts;
+        } catch (Throwable $e) {
+            report($e);
+
+            return $counts;
+        }
+    }
+
+    /**
+     * Run the PFCOUNTs in one round trip, if this client can.
+     *
+     * Only the phpredis connection exposes a `pipeline()` that can be typed —
+     * `Illuminate\Redis\Connections\Connection` declares no such method and
+     * reaches the client through `@mixin \Redis`, which describes the
+     * extension's own zero-argument pipeline rather than Laravel's. Predis
+     * reaches its client the same indirect way.
+     *
+     * Anything else therefore gets an empty result and the caller falls back
+     * to counting one key at a time: slower, identical numbers. phpredis is
+     * what the package suggests and what the suite runs against.
+     *
+     * @param  list<array{string, string}>  $pairs
+     * @return array<int, mixed>
+     */
+    private function pipeline(Connection $connection, array $pairs): array
+    {
+        if (! $connection instanceof PhpRedisConnection) {
+            return [];
+        }
+
+        $results = $connection->pipeline(function (PhpRedis $pipe) use ($pairs): void {
+            foreach ($pairs as [$dimension, $day]) {
+                $pipe->pfcount($this->key($day, $dimension));
+            }
+        });
+
+        return is_array($results) ? array_values($results) : [];
     }
 
     /**

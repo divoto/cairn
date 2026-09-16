@@ -720,6 +720,7 @@ final readonly class DatabaseStorage implements Storage
     {
         $metrics = [];
         $dimensions = [];
+        $bucket = null;
 
         foreach ($group as $row) {
             $data = (array) $row;
@@ -739,9 +740,16 @@ final readonly class DatabaseStorage implements Storage
                     $dimensions = $decoded;
                 }
             }
+
+            if (! $bucket instanceof CarbonImmutable && isset($data['bucket']) && is_numeric($data['bucket'])) {
+                $bucket = CarbonImmutable::createFromTimestampUTC((int) $data['bucket']);
+            }
         }
 
-        return new ReportRow(dimensions: $dimensions, metrics: $metrics);
+        // Rows are already grouped per bucket — that is what groupKey() keys
+        // on — so carrying the bucket out costs nothing and lets the report
+        // builder read a whole chart in one query instead of one per point.
+        return new ReportRow(dimensions: $dimensions, metrics: $metrics, bucket: $bucket);
     }
 
     private function tenantValue(int|string|null $tenantId): string

@@ -503,6 +503,68 @@ it('flags a multi-day visitor count as approximate', function (): void {
     expect(aReport()->metrics(Metric::Visitors)->total()->approximate)->toBeTrue();
 });
 
+/**
+ * Each point on a chart counts its own bucket and no other.
+ *
+ * The window handed to the visitor count is inclusive at both ends, like every
+ * other window in the report builder, but a bucket's natural end is the start
+ * of the next one. Read as inclusive, that bound put the following day inside
+ * every bucket: a daily chart reported each day's visitors plus tomorrow's,
+ * and only the last point — which had no tomorrow with data — was right.
+ *
+ * Seeded with three days of very different sizes so a leak in either direction
+ * is unmistakable rather than a plausible-looking number.
+ */
+it('counts only its own day in each bucket of a series', function (): void {
+    record('2026-03-14 09:00:00');
+    record('2026-03-15 09:00:00');
+    record('2026-03-16 09:00:00');
+
+    foreach ([['2026-03-14', 2], ['2026-03-15', 5], ['2026-03-16', 11]] as [$day, $visitors]) {
+        foreach (range(1, $visitors) as $visitor) {
+            app(UniqueCounter::class)->add(
+                $day,
+                'overall',
+                substr(hash('sha256', $day.'-'.$visitor, true), 0, 16),
+            );
+        }
+    }
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14', 'UTC'),
+        CarbonImmutable::parse('2026-03-16 23:59:59', 'UTC'),
+        Period::Day,
+    );
+
+    $series = Cairn::report()
+        ->between(
+            CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-03-16 23:59:59', 'UTC'),
+        )
+        ->metrics(Metric::Pageviews, Metric::Visitors)
+        ->interval(Period::Day)
+        ->timeseries();
+
+    expect($series)->toHaveCount(3)
+        ->and(row($series, 0)->metric(Metric::Visitors))->toBe(2.0)
+        ->and(row($series, 1)->metric(Metric::Visitors))->toBe(5.0)
+        ->and(row($series, 2)->metric(Metric::Visitors))->toBe(11.0)
+        // And the totals row is still the sum of the three, which it was
+        // before: the window bound was only ever wrong per bucket.
+        ->and($series->sum(static fn (ReportRow $row): float => $row->metric(Metric::Visitors) ?? 0.0))
+        ->toBe(18.0);
+});
+
+/**
+ * A single day's visitor count is an exact distinct count, not a sum of
+ * several, so a daily bucket carries no approximation warning.
+ */
+it('does not flag a daily bucket of a series as approximate', function (): void {
+    seedOneDay();
+
+    expect(row(aDayOf(Period::Day), 0)->approximate)->toBeFalse();
+});
+
 it('does not flag a single day as approximate', function (): void {
     app(UniqueCounter::class)->add('2026-03-14', 'overall', random_bytes(16));
 
@@ -729,6 +791,118 @@ it('issues no query against cairn_entries', function (): void {
     aReport()->metrics(Metric::Pageviews)->compare(Comparison::PreviousPeriod)->total();
 
     expect($touched)->toBeFalse();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Cost
+|--------------------------------------------------------------------------
+|
+| The dashboard's cost must not scale with how much traffic it is describing.
+| Both of these started out as a query per bucket and a counter read per row
+| per day, which is invisible on a seeded test database and is the reason a
+| busy site's dashboard took seconds: the work per read was small, but the
+| number of reads was the product of two things that both grow.
+|
+| These assert that the count does not grow, rather than pinning an exact
+| number — the point is the shape, not the constant.
+|
+*/
+
+/**
+ * Count the queries a report runs.
+ */
+function queriesFor(callable $report): int
+{
+    $connection = app(DatabaseManager::class)->connection(Tables::connection());
+
+    $count = 0;
+
+    $connection->listen(function (QueryExecuted $query) use (&$count): void {
+        $count++;
+    });
+
+    $report();
+
+    // The listener stays registered, which is harmless: a later call's
+    // queries increment a counter whose value has already been returned.
+    return $count;
+}
+
+it('reads a chart in the same number of queries however many buckets it has', function (): void {
+    seedDataset();
+
+    $series = static fn (string $from, string $to): callable => static function () use ($from, $to): void {
+        Cairn::report()
+            ->between(
+                CarbonImmutable::parse($from, 'UTC'),
+                CarbonImmutable::parse($to, 'UTC'),
+            )
+            ->metrics(Metric::Pageviews, Metric::Visitors)
+            ->interval(Period::Day)
+            ->timeseries();
+    };
+
+    $oneDay = queriesFor($series('2026-03-14 00:00:00', '2026-03-14 23:59:59'));
+    $ninetyDays = queriesFor($series('2026-01-01 00:00:00', '2026-03-31 23:59:59'));
+
+    expect($ninetyDays)->toBe($oneDay);
+});
+
+it('reads an hourly chart in the same number of queries as a daily one', function (): void {
+    seedDataset();
+
+    $series = static fn (Period $interval): callable => static function () use ($interval): void {
+        Cairn::report()
+            ->between(
+                CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+                CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+            )
+            ->metrics(Metric::Pageviews)
+            ->interval($interval)
+            ->timeseries();
+    };
+
+    expect(queriesFor($series(Period::Hour)))->toBe(queriesFor($series(Period::Day)));
+});
+
+/**
+ * A ranked table asks the unique counter once for the whole table. Grouped by
+ * route, which is the one dimension visitors are counted against, so every row
+ * has a counter key of its own to look up.
+ */
+it('reads a ranked table in the same number of queries however many rows it has', function (): void {
+    $table = static fn (int $routes): callable => static function (): void {
+        Cairn::report()
+            ->between(
+                CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+                CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+            )
+            ->metrics(Metric::Pageviews, Metric::Visitors)
+            ->groupBy(Dimension::Route)
+            ->get();
+    };
+
+    record('2026-03-14 09:00:00', 'route.1');
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14', 'UTC'),
+        CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        Period::Day,
+    );
+    $oneRoute = queriesFor($table(1));
+
+    foreach (range(2, 40) as $route) {
+        record('2026-03-14 09:00:00', 'route.'.$route);
+    }
+
+    app(Storage::class)->rollup(
+        CarbonImmutable::parse('2026-03-14', 'UTC'),
+        CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        Period::Day,
+    );
+    $fortyRoutes = queriesFor($table(40));
+
+    expect($fortyRoutes)->toBe($oneRoute);
 });
 
 /*

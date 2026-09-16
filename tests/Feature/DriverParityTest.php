@@ -230,6 +230,57 @@ it('reports zero for a day nobody visited', function (string $driver): void {
     expect(app(UniqueCounter::class)->count('2026-01-01', 'overall'))->toBe(0);
 })->with(['database', 'redis']);
 
+/*
+ * counts() is what the reporting layer actually calls. It exists because
+ * asking for one day at a time made the dashboard's cost the number of rows
+ * times the number of days, so the numbers it returns must match count()
+ * exactly — a faster path that answers differently is not an optimisation.
+ */
+it('answers in bulk with the same numbers as one at a time', function (string $driver): void {
+    useDriver($driver);
+
+    $counter = app(UniqueCounter::class);
+
+    // 2026-03-10: 3 visitors on /pricing, 1 on /home.
+    // 2026-03-11: 1 visitor on /pricing, none on /home.
+    foreach (range(1, 3) as $visitor) {
+        $counter->add('2026-03-10', 'route:pricing', substr(hash('sha256', 'a'.$visitor, true), 0, 16));
+    }
+
+    $counter->add('2026-03-10', 'route:home', substr(hash('sha256', 'b', true), 0, 16));
+    $counter->add('2026-03-11', 'route:pricing', substr(hash('sha256', 'c', true), 0, 16));
+
+    $days = ['2026-03-10', '2026-03-11', '2026-03-12'];
+    $bulk = $counter->counts($days, ['route:pricing', 'route:home']);
+
+    expect($bulk)->toBe([
+        'route:pricing' => ['2026-03-10' => 3, '2026-03-11' => 1, '2026-03-12' => 0],
+        'route:home' => ['2026-03-10' => 1, '2026-03-11' => 0, '2026-03-12' => 0],
+    ]);
+
+    // And the same figures the one-at-a-time path gives, which is the
+    // property that actually matters.
+    foreach ($bulk as $dimension => $byDay) {
+        foreach ($byDay as $day => $count) {
+            expect($count)->toBe($counter->count($day, $dimension));
+        }
+    }
+})->with(['database', 'redis']);
+
+it('returns a zero for every requested pair when nothing was counted', function (string $driver): void {
+    useDriver($driver);
+
+    expect(app(UniqueCounter::class)->counts(['2026-01-01', '2026-01-02'], ['overall']))
+        ->toBe(['overall' => ['2026-01-01' => 0, '2026-01-02' => 0]]);
+})->with(['database', 'redis']);
+
+it('asks for nothing when given no days or no dimensions', function (string $driver): void {
+    useDriver($driver);
+
+    expect(app(UniqueCounter::class)->counts([], ['overall']))->toBe(['overall' => []])
+        ->and(app(UniqueCounter::class)->counts(['2026-01-01'], []))->toBe([]);
+})->with(['database', 'redis']);
+
 it('prunes counters for days before the cutoff', function (string $driver): void {
     useDriver($driver);
 

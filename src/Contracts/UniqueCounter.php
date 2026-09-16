@@ -45,6 +45,26 @@ interface UniqueCounter
     public function count(string $day, string $dimension): int;
 
     /**
+     * The same counts for many days and many dimension values at once.
+     *
+     * The reporting layer never wants one of these in isolation: a thirty-day
+     * chart wants thirty, and a ranked table wants one per row per day. Asking
+     * for them one at a time is how a dashboard that is fast on a quiet site
+     * becomes slow on a busy one — the work per call is small, but the number
+     * of calls is the product of two things that both grow.
+     *
+     * Implementations must answer in a bounded number of round trips rather
+     * than by looping over {@see self::count()}, and must return a figure for
+     * every requested pair, using zero where nothing was counted, so callers
+     * never have to distinguish "no visitors" from "not in the result".
+     *
+     * @param  list<string>  $days  `Y-m-d` dates in UTC.
+     * @param  list<string>  $dimensions  Opaque keys, as passed to {@see self::add()}.
+     * @return array<string, array<string, int>> Dimension key => day => count.
+     */
+    public function counts(array $days, array $dimensions): array;
+
+    /**
      * Drop counting data for days before the given one.
      *
      * @param  string  $beforeDay  A `Y-m-d` date in UTC; this day is kept.
