@@ -69,7 +69,16 @@ did not make the counting itself cheaper.
 - **Unique visitors are counted for a whole report in one request.** The
   counter was read once per row per day, which on a ranked table over a month
   is the number of rows times thirty. The reporting layer now asks for the
-  whole grid at once.
+  whole grid at once — one grouped query on the database driver, one pipeline
+  of `PFCOUNT`s on the Redis driver, which cannot be collapsed into a single
+  command because `PFCOUNT` over several keys returns the cardinality of their
+  union rather than the sum this metric is defined as.
+
+  The bulk read lives on an internal interface the shipped drivers implement,
+  not on the `UniqueCounter` contract, so the contract is unchanged and a
+  counter you have written yourself keeps working. It is read the way every
+  counter was before this release, one day and one key at a time: the same
+  numbers, without the speedup.
 - **`cairn_aggregates` is indexed for the query the dashboard actually
   runs.** The read index covered `(period, type, bucket)` and left out
   `tenant_id` and `aggregate`, so every panel narrowed to a period and a
@@ -78,20 +87,6 @@ did not make the counting itself cheaper.
   read to return 90. A new migration replaces it with
   `(tenant_id, aggregate, period, type, bucket)`: the equality columns first,
   the bucket range last. Publish and run migrations to pick it up.
-
-### Added
-
-- **`UniqueCounter::counts()`**, which answers for many days and many
-  dimension values at once. Both shipped drivers implement it in a bounded
-  number of round trips — one grouped query on the database driver, one
-  pipeline of `PFCOUNT`s on the Redis driver, which cannot be collapsed into
-  a single command because `PFCOUNT` over several keys returns the
-  cardinality of their union rather than the sum this metric is defined as.
-
-  **This is a breaking change for anyone who has written their own
-  `UniqueCounter`**, which is why it is listed here rather than shipped in a
-  patch. Implementations that only ever ran against Cairn's own drivers are
-  unaffected.
 
 ## [1.2.1] - 2026-09-08
 

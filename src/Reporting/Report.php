@@ -18,6 +18,7 @@ use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Exceptions\UnavailableDimensionException;
 use Divoto\Cairn\Support\Buckets;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Illuminate\Support\Collection;
 
 /**
@@ -682,6 +683,11 @@ final class Report
      * a quiet site takes seconds on a busy one, because the number of reads is
      * the number of rows times the number of days and neither is bounded.
      *
+     * Only a counter that can answer in bulk is asked that way. A counter
+     * written against the public contract alone predates the bulk method and
+     * is still read one day and one key at a time — slower, and the same
+     * numbers.
+     *
      * @param  list<string|null>  $keys
      * @return array<string, array<string, int>>
      */
@@ -701,7 +707,21 @@ final class Report
             Buckets::between($from, $to, Period::Day),
         );
 
-        return $this->uniques->counts($days, $wanted);
+        if ($this->uniques instanceof CountsUniquesInBulk) {
+            return $this->uniques->counts($days, $wanted);
+        }
+
+        $counts = [];
+
+        foreach ($wanted as $key) {
+            $counts[$key] = [];
+
+            foreach ($days as $day) {
+                $counts[$key][$day] = $this->uniques->count($day, $key);
+            }
+        }
+
+        return $counts;
     }
 
     /**

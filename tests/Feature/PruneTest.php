@@ -421,11 +421,6 @@ it('reports zero and logs when unique-counter pruning fails', function (): void 
                 return 0;
             }
 
-            public function counts(array $days, array $dimensions): array
-            {
-                return [];
-            }
-
             public function prune(string $beforeDay): int
             {
                 throw new RuntimeException('unique-counter storage unavailable');

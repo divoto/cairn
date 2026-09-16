@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Counting;
 
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -22,7 +23,7 @@ use Throwable;
  * day costs one rejected insert instead of a select followed by an insert, and
  * two concurrent first pageviews cannot both decide the visitor is new.
  */
-final readonly class DatabaseUniqueCounter implements UniqueCounter
+final readonly class DatabaseUniqueCounter implements CountsUniquesInBulk, UniqueCounter
 {
     public function __construct(
         private DatabaseManager $database,
@@ -90,31 +91,24 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
             // a binary string on MySQL and SQLite, a stream on PostgreSQL —
             // so rows are matched back by hashing the requested keys rather
             // than by comparing what the database returned.
-            $byHash = [];
-
-            foreach ($dimensions as $dimension) {
-                $byHash[bin2hex($this->hash($dimension))] = $dimension;
-            }
+            $found = [];
 
             foreach ($rows as $row) {
                 $data = (array) $row;
-
-                $hash = Binary::read($data['dimension_hash'] ?? null);
-                $dimension = $byHash[bin2hex($hash)] ?? null;
-
-                if ($dimension === null) {
-                    continue;
-                }
-
-                $day = $this->day($data['day'] ?? null);
-
-                if (! array_key_exists($day, $counts[$dimension])) {
-                    continue;
-                }
-
+                $hash = bin2hex(Binary::read($data['dimension_hash'] ?? null));
                 $value = $data['aggregate'] ?? 0;
 
-                $counts[$dimension][$day] = (int) (is_numeric($value) ? $value : 0);
+                $found[$hash][$this->day($data['day'] ?? null)] = (int) (is_numeric($value) ? $value : 0);
+            }
+
+            // Filled from the grid that was asked for, not from the rows that
+            // came back, so a pair the query had no row for keeps its zero.
+            foreach ($dimensions as $dimension) {
+                $hash = bin2hex($this->hash($dimension));
+
+                foreach ($days as $day) {
+                    $counts[$dimension][$day] = $found[$hash][$day] ?? 0;
+                }
             }
 
             return $counts;
@@ -166,11 +160,7 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
      */
     private function day(mixed $value): string
     {
-        if (! is_string($value)) {
-            return '';
-        }
-
-        return substr($value, 0, 10);
+        return is_string($value) ? substr($value, 0, 10) : '';
     }
 
     /**

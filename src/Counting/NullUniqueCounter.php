@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Counting;
 
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 
 /**
  * A unique counter that counts nothing.
  *
  * Bound when `cairn.enabled` is false.
  */
-final class NullUniqueCounter implements UniqueCounter
+final class NullUniqueCounter implements CountsUniquesInBulk, UniqueCounter
 {
     public function add(string $day, string $dimension, string $visitor): void
     {

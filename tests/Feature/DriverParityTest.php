@@ -7,6 +7,7 @@ use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Enums\EntryType;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Query\Builder;
@@ -51,6 +52,23 @@ function useDriver(string $driver): void
     foreach ([Ingest::class, Storage::class, UniqueCounter::class, Presence::class] as $contract) {
         app()->forgetInstance($contract);
     }
+}
+
+/**
+ * The resolved counter, through the bulk interface the reporting layer reads.
+ *
+ * Both shipped drivers implement it; a driver that stopped would fall back to
+ * one read per day per key without any test noticing, so this fails loudly.
+ */
+function bulkCounter(): CountsUniquesInBulk&UniqueCounter
+{
+    $counter = app(UniqueCounter::class);
+
+    if (! $counter instanceof CountsUniquesInBulk) {
+        throw new LogicException($counter::class.' does not count in bulk.');
+    }
+
+    return $counter;
 }
 
 function entryRows(): Builder
@@ -239,7 +257,7 @@ it('reports zero for a day nobody visited', function (string $driver): void {
 it('answers in bulk with the same numbers as one at a time', function (string $driver): void {
     useDriver($driver);
 
-    $counter = app(UniqueCounter::class);
+    $counter = bulkCounter();
 
     // 2026-03-10: 3 visitors on /pricing, 1 on /home.
     // 2026-03-11: 1 visitor on /pricing, none on /home.
@@ -270,15 +288,15 @@ it('answers in bulk with the same numbers as one at a time', function (string $d
 it('returns a zero for every requested pair when nothing was counted', function (string $driver): void {
     useDriver($driver);
 
-    expect(app(UniqueCounter::class)->counts(['2026-01-01', '2026-01-02'], ['overall']))
+    expect(bulkCounter()->counts(['2026-01-01', '2026-01-02'], ['overall']))
         ->toBe(['overall' => ['2026-01-01' => 0, '2026-01-02' => 0]]);
 })->with(['database', 'redis']);
 
 it('asks for nothing when given no days or no dimensions', function (string $driver): void {
     useDriver($driver);
 
-    expect(app(UniqueCounter::class)->counts([], ['overall']))->toBe(['overall' => []])
-        ->and(app(UniqueCounter::class)->counts(['2026-01-01'], []))->toBe([]);
+    expect(bulkCounter()->counts([], ['overall']))->toBe(['overall' => []])
+        ->and(bulkCounter()->counts(['2026-01-01'], []))->toBe([]);
 })->with(['database', 'redis']);
 
 it('prunes counters for days before the cutoff', function (string $driver): void {

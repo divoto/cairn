@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Counting;
 
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Contracts\Redis\Factory as Redis;
 use Illuminate\Redis\Connections\Connection;
@@ -27,7 +28,7 @@ use Throwable;
  *
  * Keys expire on their own, so this driver's prune has almost nothing to do.
  */
-final readonly class RedisUniqueCounter implements UniqueCounter
+final readonly class RedisUniqueCounter implements CountsUniquesInBulk, UniqueCounter
 {
     /**
      * How long a day's counter is kept.

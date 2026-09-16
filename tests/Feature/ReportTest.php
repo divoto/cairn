@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Carbon\CarbonImmutable;
 use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
+use Divoto\Cairn\Contracts\TenantResolver;
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Data\Entry;
 use Divoto\Cairn\Data\ReportRow;
@@ -17,6 +18,7 @@ use Divoto\Cairn\Exceptions\UnavailableDimensionException;
 use Divoto\Cairn\Facades\Cairn;
 use Divoto\Cairn\Reporting\Report;
 use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Events\QueryExecuted;
@@ -249,6 +251,24 @@ it('returns empty buckets as zero rather than omitting them', function (): void 
     expect($series)->toHaveCount(4)
         ->and(row($series, 0)->metric(Metric::Pageviews))->toBe(0.0)
         ->and(row($series, 3)->metric(Metric::Pageviews))->toBe(0.0);
+});
+
+/**
+ * A window that ends before it starts has no buckets, so there is nothing to
+ * read and no point to draw — not one bucket's worth of zeroes.
+ */
+it('returns no points for a window that ends before it starts', function (): void {
+    seedDataset();
+
+    $series = Cairn::report()
+        ->between(
+            CarbonImmutable::parse('2026-03-15 00:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-03-14 23:59:59', 'UTC'),
+        )
+        ->metrics(Metric::Pageviews, Metric::Visitors)
+        ->timeseries();
+
+    expect($series)->toBeEmpty();
 });
 
 /*
@@ -903,6 +923,68 @@ it('reads a ranked table in the same number of queries however many rows it has'
     $fortyRoutes = queriesFor($table(40));
 
     expect($fortyRoutes)->toBe($oneRoute);
+});
+
+/**
+ * The bulk read is an internal interface, not part of the UniqueCounter
+ * contract, so that a counter written outside the package keeps working after
+ * an upgrade. One that implements only the contract is read a day and a key
+ * at a time, and must report exactly what a bulk-capable driver reports.
+ */
+it('reads a counter that only implements the contract, with the same numbers', function (): void {
+    seedDataset();
+
+    app(UniqueCounter::class)->add('2026-03-14', 'route:pricing.index', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-14', 'route:pricing.index', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-15', 'route:pricing.index', random_bytes(16));
+    app(UniqueCounter::class)->add('2026-03-15', 'route:docs.index', random_bytes(16));
+
+    $inner = app(UniqueCounter::class);
+
+    $contractOnly = new class($inner) implements UniqueCounter
+    {
+        public function __construct(private readonly UniqueCounter $inner) {}
+
+        public function add(string $day, string $dimension, string $visitor): void
+        {
+            $this->inner->add($day, $dimension, $visitor);
+        }
+
+        public function count(string $day, string $dimension): int
+        {
+            return $this->inner->count($day, $dimension);
+        }
+
+        public function prune(string $beforeDay): int
+        {
+            return $this->inner->prune($beforeDay);
+        }
+    };
+
+    $rows = static fn (UniqueCounter $counter): array => (new Report(
+        app(Storage::class),
+        $counter,
+        app(Presence::class),
+        app(TenantResolver::class),
+    ))
+        ->between(
+            CarbonImmutable::parse('2026-03-14 00:00:00', 'UTC'),
+            CarbonImmutable::parse('2026-03-15 23:59:59', 'UTC'),
+        )
+        ->metrics(Metric::Pageviews, Metric::Visitors)
+        ->groupBy(Dimension::Route)
+        ->get()
+        ->map(static fn (ReportRow $row): array => [$row->dimensions, $row->metric(Metric::Visitors)])
+        ->all();
+
+    expect($inner)->toBeInstanceOf(CountsUniquesInBulk::class)
+        ->and($contractOnly)->not->toBeInstanceOf(CountsUniquesInBulk::class)
+        ->and($rows($contractOnly))->toBe($rows($inner))
+        ->and($rows($contractOnly))->toContain(
+            [['route' => 'pricing.index'], 3.0],
+            [['route' => 'home.index'], 0.0],
+            [['route' => 'docs.index'], 1.0],
+        );
 });
 
 /*
