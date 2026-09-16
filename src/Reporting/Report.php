@@ -18,6 +18,7 @@ use Divoto\Cairn\Enums\Metric;
 use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Exceptions\UnavailableDimensionException;
 use Divoto\Cairn\Support\Buckets;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Illuminate\Support\Collection;
 
 /**
@@ -211,34 +212,59 @@ final class Report
     {
         $this->guard();
 
-        $stored = $this->storedMetrics();
-        $tenant = $this->tenants->resolve();
+        $buckets = Buckets::between($this->from, $this->to, $this->interval);
+
+        if ($buckets === []) {
+            return new Collection;
+        }
+
+        $first = $buckets[0];
+
+        // The last bucket's exclusive end, and one second inside it: storage
+        // wants the half-open bound, everything counting whole days wants the
+        // inclusive one.
+        $end = Buckets::next($buckets[count($buckets) - 1], $this->interval);
+        $last = $end->subSecond();
+
+        // One read for the whole range, split into buckets here. Asking
+        // storage once per bucket made a thirty-day chart thirty queries and
+        // an hourly chart over that range seven hundred and twenty — the cost
+        // of a chart grew with how finely it was cut, which is backwards, and
+        // it is the shape that turns a busy site's dashboard slow.
+        $measured = $this->applyFilters($this->storage->aggregate(new AggregateQuery(
+            from: $first,
+            to: $end,
+            period: $this->interval,
+            metrics: $this->storedMetrics(),
+            groupBy: $this->storageGroupBy(),
+            filters: $this->filters,
+            tenantId: $this->tenants->resolve(),
+        )));
+
+        /** @var array<int, list<ReportRow>> $byBucket */
+        $byBucket = [];
+
+        foreach ($measured as $row) {
+            if ($row->bucket instanceof CarbonImmutable) {
+                $byBucket[$row->bucket->getTimestamp()][] = $row;
+            }
+        }
+
+        // Visitors are counted per day and cannot be cut finer (see
+        // withVisitors). Asking for the visitors in one hour would return the
+        // whole day's count for every hour of it — a flat line that reads as a
+        // real hourly measurement. The metric is dropped from the row instead,
+        // which renders as an em dash.
+        $key = $this->countsVisitorsPerBucket() ? $this->visitorKeyFor() : null;
+        $counts = $this->fetchVisitors([$key], $first, $last);
 
         $rows = [];
 
-        foreach (Buckets::between($this->from, $this->to, $this->interval) as $bucket) {
-            $end = Buckets::next($bucket, $this->interval);
+        foreach ($buckets as $bucket) {
+            $stop = Buckets::next($bucket, $this->interval)->subSecond();
 
-            $measured = $this->storage->aggregate(new AggregateQuery(
-                from: $bucket,
-                to: $end,
-                period: $this->interval,
-                metrics: $stored,
-                groupBy: $this->storageGroupBy(),
-                filters: $this->filters,
-                tenantId: $tenant,
-            ));
-
-            $totals = $this->sumMetrics($this->applyFilters($measured));
-
-            // Visitors are counted per day and cannot be cut finer (see
-            // withVisitors). Asking for the visitors in one hour would return
-            // the whole day's count for every hour of it — a flat line that
-            // reads as a real hourly measurement. The metric is dropped from
-            // the row instead, which renders as an em dash.
-            if ($this->countsVisitorsPerBucket()) {
-                $totals = $this->withVisitors($totals, $bucket, $end);
-            }
+            $totals = $this->sumMetrics(new Collection($byBucket[$bucket->getTimestamp()] ?? []));
+            $totals = $this->withVisitors($totals, $counts, $key, $bucket, $stop);
 
             $metrics = $this->derive($totals);
 
@@ -249,7 +275,7 @@ final class Report
             $rows[] = new ReportRow(
                 dimensions: [],
                 metrics: $metrics,
-                approximate: $this->isApproximate($bucket, $end),
+                approximate: $this->isApproximate($bucket, $stop),
                 bucket: $bucket,
             );
         }
@@ -403,7 +429,10 @@ final class Report
         $measured = $this->applyFilters($measured);
 
         if ($this->groupBy === []) {
-            $totals = $this->withVisitors($this->sumMetrics($measured), $from, $to);
+            $key = $this->visitorKeyFor();
+            $counts = $this->fetchVisitors([$key], $from, $to);
+
+            $totals = $this->withVisitors($this->sumMetrics($measured), $counts, $key, $from, $to);
 
             return new Collection([
                 new ReportRow(
@@ -416,12 +445,33 @@ final class Report
 
         $dimension = $this->groupBy[0];
 
+        $groups = $measured->groupBy(
+            fn (ReportRow $row): string => (string) ($row->dimension($dimension->value) ?? '')
+        );
+
+        // Every row's counter key, gathered before any row is built. A ranked
+        // table asks the unique counter once for the whole table rather than
+        // once per row per day — the difference between one round trip and
+        // several thousand on a site with a lot of routes and a month selected.
+        $keys = [];
+
+        foreach ($groups->keys() as $value) {
+            $keys[] = $this->visitorKeyFor($dimension, (string) $value);
+        }
+
+        $counts = $this->fetchVisitors($keys, $from, $to);
+
         /** @var Collection<int, ReportRow> */
-        return $measured
-            ->groupBy(fn (ReportRow $row): string => (string) ($row->dimension($dimension->value) ?? ''))
-            ->map(function (Collection $group, string $value) use ($dimension, $from, $to): ReportRow {
+        return $groups
+            ->map(function (Collection $group, string $value) use ($dimension, $from, $to, $counts): ReportRow {
                 $totals = $this->sumMetrics($group);
-                $totals = $this->withVisitors($totals, $from, $to, $dimension, $value);
+                $totals = $this->withVisitors(
+                    $totals,
+                    $counts,
+                    $this->visitorKeyFor($dimension, $value),
+                    $from,
+                    $to,
+                );
 
                 return new ReportRow(
                     dimensions: [$dimension->value => $value],
@@ -595,25 +645,16 @@ final class Report
     }
 
     /**
-     * Add unique visitors, summed across the days in the window.
+     * The unique-counter key a row's visitors live under.
      *
-     * Summing daily counts counts a returning visitor once per day they
-     * visited. That is the direct consequence of rotating the salt every 24
-     * hours — there is no cross-day identity to deduplicate against — and it
-     * is why any row spanning more than a day is flagged approximate.
-     *
-     * @param  array<string, float>  $totals
-     * @return array<string, float>
+     * Null when this report has no visitor figure to put against the row —
+     * either because it did not ask for one, or because it is narrowed to a
+     * dimension the counter was never written for.
      */
-    private function withVisitors(
-        array $totals,
-        CarbonImmutable $from,
-        CarbonImmutable $to,
-        ?Dimension $dimension = null,
-        ?string $value = null,
-    ): array {
+    private function visitorKeyFor(?Dimension $dimension = null, ?string $value = null): ?string
+    {
         if (! in_array(Metric::Visitors, $this->metrics, true)) {
-            return $totals;
+            return null;
         }
 
         $narrowed = $this->narrowedDimension();
@@ -623,18 +664,98 @@ final class Report
             // Falling through to "overall" would answer with the whole site's
             // visitors under the filter's heading.
             if (! $this->reports(Metric::Visitors)) {
-                return $totals;
+                return null;
             }
 
             $dimension = $narrowed;
             $value = $this->filters[$narrowed->value][0] ?? null;
         }
 
-        $key = $dimension instanceof Dimension ? $dimension->value.':'.$value : 'overall';
+        return $dimension instanceof Dimension ? $dimension->value.':'.$value : 'overall';
+    }
+
+    /**
+     * Every daily count this report needs, in one request to the counter.
+     *
+     * The counter is asked for the whole grid — every key, every day — before
+     * a single row is built. Reading it row by row is correct and is what the
+     * first version did; it is also how a dashboard that returns instantly on
+     * a quiet site takes seconds on a busy one, because the number of reads is
+     * the number of rows times the number of days and neither is bounded.
+     *
+     * Only a counter that can answer in bulk is asked that way. A counter
+     * written against the public contract alone predates the bulk method and
+     * is still read one day and one key at a time — slower, and the same
+     * numbers.
+     *
+     * @param  list<string|null>  $keys
+     * @return array<string, array<string, int>>
+     */
+    private function fetchVisitors(array $keys, CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $wanted = array_values(array_unique(array_filter(
+            $keys,
+            static fn (?string $key): bool => $key !== null,
+        )));
+
+        if ($wanted === []) {
+            return [];
+        }
+
+        $days = array_map(
+            static fn (CarbonImmutable $day): string => $day->format('Y-m-d'),
+            Buckets::between($from, $to, Period::Day),
+        );
+
+        if ($this->uniques instanceof CountsUniquesInBulk) {
+            return $this->uniques->counts($days, $wanted);
+        }
+
+        $counts = [];
+
+        foreach ($wanted as $key) {
+            $counts[$key] = [];
+
+            foreach ($days as $day) {
+                $counts[$key][$day] = $this->uniques->count($day, $key);
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Add unique visitors, summed across the days in the window.
+     *
+     * Summing daily counts counts a returning visitor once per day they
+     * visited. That is the direct consequence of rotating the salt every 24
+     * hours — there is no cross-day identity to deduplicate against — and it
+     * is why any row spanning more than a day is flagged approximate.
+     *
+     * `$to` is inclusive, like every other window in this class. It matters
+     * here more than it looks: read as exclusive, a one-day bucket picks up
+     * the following day as well, and every point on a chart reports its own
+     * visitors plus tomorrow's.
+     *
+     * @param  array<string, float>  $totals
+     * @param  array<string, array<string, int>>  $counts
+     * @return array<string, float>
+     */
+    private function withVisitors(
+        array $totals,
+        array $counts,
+        ?string $key,
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+    ): array {
+        if ($key === null) {
+            return $totals;
+        }
+
         $visitors = 0;
 
         foreach (Buckets::between($from, $to, Period::Day) as $day) {
-            $visitors += $this->uniques->count($day->format('Y-m-d'), $key);
+            $visitors += $counts[$key][$day->format('Y-m-d')] ?? 0;
         }
 
         $totals[Metric::Visitors->value] = (float) $visitors;

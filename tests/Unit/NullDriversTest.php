@@ -76,6 +76,7 @@ it('counts nothing in the null unique counter', function (): void {
     $counter->add('2026-03-14', 'overall', random_bytes(16));
 
     expect($counter->count('2026-03-14', 'overall'))->toBe(0)
+        ->and($counter->counts(['2026-03-14'], ['overall']))->toBe(['overall' => ['2026-03-14' => 0]])
         ->and($counter->prune('2026-03-14'))->toBe(0);
 });
 

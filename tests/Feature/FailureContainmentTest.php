@@ -8,6 +8,7 @@ use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Counting\DatabaseUniqueCounter;
 use Divoto\Cairn\Enums\Channel;
 use Divoto\Cairn\Enums\Dimension;
 use Divoto\Cairn\Enums\Metric;
@@ -80,6 +81,19 @@ it('swallows a failure in counting and presence', function (): void {
         app(Presence::class)->count();
         app(Presence::class)->recent();
     })->not->toThrow(Throwable::class);
+});
+
+/**
+ * The bulk read degrades the way a single count does: a failed query is
+ * reported, and every requested pair still comes back, as zero.
+ */
+it('reports zeroes for every requested pair when a bulk count fails', function (): void {
+    breakStorage();
+
+    expect(app(DatabaseUniqueCounter::class)->counts(['2026-03-14', '2026-03-15'], ['overall', 'route:pricing.index']))->toBe([
+        'overall' => ['2026-03-14' => 0, '2026-03-15' => 0],
+        'route:pricing.index' => ['2026-03-14' => 0, '2026-03-15' => 0],
+    ]);
 });
 
 it('swallows a failure in ingest and storage', function (): void {

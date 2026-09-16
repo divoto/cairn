@@ -83,6 +83,12 @@ days counts three times. Any row spanning more than one day carries
 Visitors are counted site-wide and per route. Asking for them at another
 grouping throws rather than returning a wrong number.
 
+The counter is read for a whole report at once — every dimension value and
+every day in one request — rather than once per row per day. A ranked table
+over a month is one read, not one for each of its rows times thirty. Both
+shipped drivers do this. A custom `UniqueCounter` is read one day and one
+dimension value at a time instead: the same numbers, more reads.
+
 ## Narrowing to one dimension value
 
 A filter without a grouping asks a question the rollup can answer — "how much

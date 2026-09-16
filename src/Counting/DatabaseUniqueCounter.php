@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Counting;
 
 use Divoto\Cairn\Contracts\UniqueCounter;
 use Divoto\Cairn\Support\Binary;
+use Divoto\Cairn\Support\CountsUniquesInBulk;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
@@ -22,7 +23,7 @@ use Throwable;
  * day costs one rejected insert instead of a select followed by an insert, and
  * two concurrent first pageviews cannot both decide the visitor is new.
  */
-final readonly class DatabaseUniqueCounter implements UniqueCounter
+final readonly class DatabaseUniqueCounter implements CountsUniquesInBulk, UniqueCounter
 {
     public function __construct(
         private DatabaseManager $database,
@@ -61,6 +62,63 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
         }
     }
 
+    public function counts(array $days, array $dimensions): array
+    {
+        $counts = $this->zeroed($days, $dimensions);
+
+        if ($days === [] || $dimensions === []) {
+            return $counts;
+        }
+
+        try {
+            $connection = $this->connection();
+
+            // One grouped read for the whole grid. The primary key is
+            // (day, dimension_hash, visitor, tenant_id), so this is the same
+            // index range the per-day query walked — just walked once.
+            $rows = $connection
+                ->table(Tables::visitorDays())
+                ->selectRaw('day, dimension_hash, count(*) as aggregate')
+                ->whereIn('day', $days)
+                ->whereIn('dimension_hash', array_map(
+                    fn (string $dimension): mixed => Binary::bind($connection, $this->hash($dimension)),
+                    $dimensions,
+                ))
+                ->groupBy('day', 'dimension_hash')
+                ->get();
+
+            // The hash comes back in whatever shape the driver stores it —
+            // a binary string on MySQL and SQLite, a stream on PostgreSQL —
+            // so rows are matched back by hashing the requested keys rather
+            // than by comparing what the database returned.
+            $found = [];
+
+            foreach ($rows as $row) {
+                $data = (array) $row;
+                $hash = bin2hex(Binary::read($data['dimension_hash'] ?? null));
+                $value = $data['aggregate'] ?? 0;
+
+                $found[$hash][$this->day($data['day'] ?? null)] = (int) (is_numeric($value) ? $value : 0);
+            }
+
+            // Filled from the grid that was asked for, not from the rows that
+            // came back, so a pair the query had no row for keeps its zero.
+            foreach ($dimensions as $dimension) {
+                $hash = bin2hex($this->hash($dimension));
+
+                foreach ($days as $day) {
+                    $counts[$dimension][$day] = $found[$hash][$day] ?? 0;
+                }
+            }
+
+            return $counts;
+        } catch (Throwable $e) {
+            report($e);
+
+            return $counts;
+        }
+    }
+
     public function prune(string $beforeDay): int
     {
         try {
@@ -73,6 +131,36 @@ final readonly class DatabaseUniqueCounter implements UniqueCounter
 
             return 0;
         }
+    }
+
+    /**
+     * A zero for every requested pair.
+     *
+     * Built up front so a caller reading the result never has to tell "no
+     * visitors" apart from "this pair was not in the grouped result", and so
+     * a failed query degrades to zeroes rather than to missing keys.
+     *
+     * @param  list<string>  $days
+     * @param  list<string>  $dimensions
+     * @return array<string, array<string, int>>
+     */
+    private function zeroed(array $days, array $dimensions): array
+    {
+        $zeroes = array_fill_keys($days, 0);
+
+        return array_fill_keys($dimensions, $zeroes);
+    }
+
+    /**
+     * Normalise a stored day back to `Y-m-d`.
+     *
+     * The column is a DATE, which PostgreSQL and MySQL hand back as
+     * `Y-m-d` but SQLite returns however it was written — including with a
+     * time component when the driver widened it.
+     */
+    private function day(mixed $value): string
+    {
+        return is_string($value) ? substr($value, 0, 10) : '';
     }
 
     /**
