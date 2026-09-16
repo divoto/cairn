@@ -13,6 +13,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Route;
 
 /**
  * Invokes one of the provider's own private methods directly, bypassing the
@@ -39,13 +40,21 @@ function invokeProviderRouting(string $method): Router
     $router = new Router(app('events'), app());
     $original = app('router');
 
+    // The route files register through the Route facade, which keeps the
+    // router it first resolved. Left alone, it would hand every route to the
+    // application's own router, and a test that no route was registered here
+    // would pass whether or not one was.
     app()->instance('router', $router);
+    Route::clearResolvedInstance('router');
 
     try {
         invokeProvider($method);
     } finally {
         app()->instance('router', $original);
+        Route::clearResolvedInstance('router');
     }
+
+    $router->getRoutes()->refreshNameLookups();
 
     return $router;
 }
@@ -68,11 +77,51 @@ it('publishes the configuration under the cairn-config tag', function (): void {
         ->and(reset($paths))->toEndWith('config/cairn.php');
 });
 
-it('leaves the host application untouched when disabled', function (): void {
-    config()->set('cairn.enabled', false);
+/**
+ * Switched off, Cairn adds nothing to the host application: no middleware in
+ * its web group, no routes, nothing on its schedule. Each switch it would
+ * otherwise read is turned on here, so the only thing standing between the
+ * application and each registration is `cairn.enabled` itself — and the same
+ * calls are made again with it on, so a registration that silently went
+ * somewhere these fakes cannot see fails rather than passes.
+ */
+it('leaves the host application untouched when disabled', function (bool $enabled): void {
+    config()->set('cairn.enabled', $enabled);
+    config()->set('cairn.recorders.'.PageViews::class.'.enabled', true);
+    config()->set('cairn.recorders.'.ClientMetrics::class.'.enabled', true);
+    config()->set('cairn.api.enabled', true);
 
-    expect(config('cairn.enabled'))->toBeFalse();
-});
+    $kernel = new class(app(), app('router')) extends Illuminate\Foundation\Http\Kernel
+    {
+        protected $middlewareGroups = ['web' => []];
+    };
+
+    $originalKernel = app(Kernel::class);
+    $originalSchedule = app(Schedule::class);
+    $schedule = new Schedule;
+
+    app()->instance(Kernel::class, $kernel);
+    app()->instance(Schedule::class, $schedule);
+
+    try {
+        invokeProvider('registerMiddleware');
+        invokeProvider('registerSchedule');
+    } finally {
+        app()->instance(Kernel::class, $originalKernel);
+        app()->instance(Schedule::class, $originalSchedule);
+    }
+
+    $beacon = invokeProviderRouting('registerBeacon');
+    $api = invokeProviderRouting('registerApi');
+
+    expect($kernel->getMiddlewareGroups()['web'] !== [])->toBe($enabled)
+        ->and($beacon->getRoutes()->hasNamedRoute('cairn.collect'))->toBe($enabled)
+        ->and($api->getRoutes()->getRoutes() !== [])->toBe($enabled)
+        ->and($schedule->events() !== [])->toBe($enabled);
+})->with([
+    'disabled' => [false],
+    'enabled, as the control' => [true],
+]);
 
 it('declares every contract it guarantees is resolvable', function (): void {
     $provider = new CairnServiceProvider(app());
