@@ -1,0 +1,14 @@
+# The application Larastan boots to analyse this package.
+#
+# Package discovery covers installed dependencies, not the package being
+# analysed, so without this list Cairn's own provider never registers and none
+# of its view namespaces exist. Larastan checks every view name passed to a
+# view factory against that application, and would report `cairn::dashboard`
+# and the Pulse cards as views that do not exist.
+#
+# The test suite does not read this file; tests/TestCase.php names the same
+# providers for itself.
+providers:
+  - Livewire\LivewireServiceProvider
+  - Laravel\Pulse\PulseServiceProvider
+  - Divoto\Cairn\CairnServiceProvider
