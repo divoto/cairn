@@ -12,7 +12,7 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
-## [Unreleased]
+## [1.2.2] - 2026-09-16
 
 The dashboard's cost no longer grows with the amount of traffic it is
 describing. Nothing about what is measured, stored or reported changes —
@@ -86,7 +86,21 @@ did not make the counting itself cheaper.
   MySQL costed that index above a table scan and took the scan — 748,000 rows
   read to return 90. A new migration replaces it with
   `(tenant_id, aggregate, period, type, bucket)`: the equality columns first,
-  the bucket range last. Publish and run migrations to pick it up.
+  the bucket range last.
+
+### Upgrading
+
+Run the migration, which replaces one index on `cairn_aggregates` and changes
+no data:
+
+```bash
+php artisan migrate
+```
+
+Nothing else is required, and skipping it loses nothing but the index
+speedup. Building the index takes time in proportion to the size of
+`cairn_aggregates`. If you call `CairnServiceProvider::ignoreMigrations()`,
+publish the new migration with `--tag=cairn-migrations` first.
 
 ## [1.2.1] - 2026-09-08
 
@@ -567,6 +581,8 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[1.2.2]: https://github.com/divoto/cairn/releases/tag/v1.2.2
 
 [1.2.1]: https://github.com/divoto/cairn/releases/tag/v1.2.1
 
