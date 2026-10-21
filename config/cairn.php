@@ -9,6 +9,7 @@ use Divoto\Cairn\Recorders\Conversions;
 use Divoto\Cairn\Recorders\PageViews;
 use Divoto\Cairn\Tenancy\NullTenantResolver;
 use Divoto\Cairn\Widgets\Shipped\ActivityFeed;
+use Divoto\Cairn\Widgets\Shipped\BrokenPages;
 use Divoto\Cairn\Widgets\Shipped\Browsers;
 use Divoto\Cairn\Widgets\Shipped\Campaigns;
 use Divoto\Cairn\Widgets\Shipped\Channels;
@@ -333,6 +334,14 @@ return [
             // than by your route table, so rollups grow with your content.
             'group_by' => 'name',
 
+            // Record links to URLs that match no route, for the Broken pages
+            // panel. These are not counted as pageviews, sessions or
+            // visitors. The path is stored with ids and anything shaped like a
+            // token collapsed to {id}, and without its query string, because
+            // a mistyped reset link is still a credential. Only GET requests
+            // that are not asking for JSON are recorded.
+            'not_found' => true,
+
             // Paths, route names or closures to never record. Wildcards are
             // matched with Str::is(), so "admin/*" works.
             'ignore' => [
@@ -424,6 +433,7 @@ return [
             TopContent::class,
             WebVitals::class,
             SlowestRoutes::class,
+            BrokenPages::class,
             ActivityFeed::class,
         ],
     ],

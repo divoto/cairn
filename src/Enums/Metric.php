@@ -94,6 +94,15 @@ enum Metric: string
     case ResponseSamples = 'response_samples';
 
     /**
+     * Requests answered with a 4xx or 5xx status.
+     *
+     * Counts pageviews of a matched route that failed, and requests that
+     * matched no route at all. Measured for every entry dimension, so the
+     * errors on one route or from one referrer are real numbers.
+     */
+    case Errors = 'errors';
+
+    /**
      * Unique visitors.
      *
      * Additive in the sense that the report builder sums it, but it comes from
@@ -247,6 +256,12 @@ enum Metric: string
                 && $ratio['denominator']->isMeasuredFor($dimension);
         }
 
+        // Broken pages are measured from failed requests only, and the one
+        // thing counted about them is how many there were.
+        if ($dimension === Dimension::ErrorPage) {
+            return $this === self::Errors;
+        }
+
         // Subject is measured from entries, but only for the four quantities
         // a model can actually carry: it never reaches a pageview, and nothing
         // beacon-measured is attributed to a model.
@@ -343,6 +358,7 @@ enum Metric: string
             self::ScrollDepthSamples => 'Scroll-depth samples',
             self::ResponseMilliseconds => 'Total response time',
             self::ResponseSamples => 'Response-time samples',
+            self::Errors => 'Errors',
             self::Visitors => 'Visitors',
             self::BounceRate => 'Bounce rate',
             self::AvgSessionDuration => 'Avg. session duration',

@@ -25,6 +25,39 @@ release.
   published config lists its widgets, add
   `Divoto\Cairn\Widgets\Shipped\SlowestRoutes::class` to show it.
 
+- **Broken pages.** A new panel lists the requests answered with a 4xx or 5xx
+  status. Each row is a status, a URL and the site that linked to it, so a
+  404 with a referrer is a dead link someone else is hosting, and a 5xx row
+  names the page with the bug. If your published config lists its widgets, add
+  `Divoto\Cairn\Widgets\Shipped\BrokenPages::class` to show it.
+
+- **Requests that match no route are recorded.** The pageview middleware sits
+  on the `web` group, which never runs for a URL with no route, and that is
+  the most common broken link. A global middleware now records those, and only
+  those: a GET answered 404 that is not asking for JSON. They are stored as a
+  new entry type, `not_found`, and are not pageviews. They start no session,
+  count toward no visitor figure, and leave the route empty, so a scanner
+  working through a list of paths moves no number except Broken pages. The
+  privacy gate applies as it does to a pageview: Do Not Track, Global Privacy
+  Control, opt-out, consent, bots and sampling.
+
+  Their URLs are scrubbed harder than a pageview's, because nothing vouches
+  for a path no route matched, and a mistyped reset link is still a
+  credential. Numeric ids, UUIDs, ULIDs and any segment shaped like a token
+  become `{id}`, and the whole query string is dropped, UTM parameters
+  included. Set `recorders.PageViews::class.not_found` to `false` to record
+  none of them. A published config without the key has them on.
+
+- **`Metric::Errors`**, the number of requests answered 4xx or 5xx. It is
+  measured for every entry dimension, so the errors on a route are a real
+  number.
+
+- **`Dimension::Status`** and **`Dimension::ErrorPage`**, both rolled up.
+  ErrorPage keeps the hundred most frequent status, URL and referrer
+  combinations in each bucket, because failed URLs come from whatever a
+  stranger types and would otherwise grow the rollup without limit. Its key is
+  a JSON array, `[404, "/old-pricing", "blog.example.com"]`.
+
 - **`Report::minimum()`** leaves out rows where a metric is below a floor. It
   applies before ordering and the limit, so a ranked table still fills to its
   limit from the rows that qualify.

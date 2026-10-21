@@ -18,6 +18,7 @@ use Divoto\Cairn\Enums\Period;
 use Divoto\Cairn\Support\Binary;
 use Divoto\Cairn\Support\Buckets;
 use Divoto\Cairn\Support\EntryMapper;
+use Divoto\Cairn\Support\ErrorPageKey;
 use Divoto\Cairn\Support\SubjectKey;
 use Divoto\Cairn\Support\Tables;
 use Illuminate\Database\Connection;
@@ -50,6 +51,17 @@ final readonly class DatabaseStorage implements Storage
      * longer rather than hold locks the host application waits on.
      */
     private const DELETE_CHUNK = 1000;
+
+    /**
+     * How many broken-page rows one bucket keeps.
+     *
+     * Every other dimension is bounded by the application: its routes, its
+     * campaigns, the countries there are. Failed URLs are bounded by whatever
+     * a stranger types, and a single scanner can request a thousand paths in
+     * an hour. Keeping the most frequent hundred per bucket holds the rollup
+     * to a fixed size, at the cost of the rarest rows in a busy bucket.
+     */
+    private const ERROR_PAGES_PER_BUCKET = 100;
 
     /**
      * Google's "good" thresholds for the Core Web Vitals.
@@ -215,6 +227,7 @@ final readonly class DatabaseStorage implements Storage
 
                 $measured = match (true) {
                     $dimension->source() === DimensionSource::Sessions => $this->measureSessionsBy($bucket, $end, $tenant, $dimension),
+                    $dimension === Dimension::ErrorPage => $this->measureErrorPages($bucket, $end, $tenant),
                     $dimension->isComposite() => $this->measureSubjects($bucket, $end, $tenant),
                     default => $this->measureBy($bucket, $end, $tenant, $dimension),
                 };
@@ -371,6 +384,54 @@ final readonly class DatabaseStorage implements Storage
             if ($measurements !== []) {
                 $out[SubjectKey::for($type, $id)] = $measurements;
             }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Count failed requests by status, URL and referring host.
+     *
+     * Only the most frequent combinations are kept; see
+     * {@see self::ERROR_PAGES_PER_BUCKET}. Ties are broken by the key columns
+     * so that rebuilding a bucket keeps the same rows every time.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function measureErrorPages(
+        CarbonImmutable $from,
+        CarbonImmutable $to,
+        string $tenant,
+    ): array {
+        $rows = $this->entriesIn($from, $to, $tenant)
+            ->where('status', '>=', 400)
+            ->whereNotNull('url')
+            ->groupBy('status', 'url', 'referrer_host')
+            ->selectRaw('status, url, referrer_host, count(*) as m_errors')
+            ->orderByDesc('m_errors')
+            ->orderBy('status')
+            ->orderBy('url')
+            ->orderBy('referrer_host')
+            ->limit(self::ERROR_PAGES_PER_BUCKET)
+            ->get();
+
+        $out = [];
+
+        foreach ($rows as $row) {
+            $data = (array) $row;
+            $status = $data['status'] ?? null;
+            $url = $data['url'] ?? null;
+            $referrer = $data['referrer_host'] ?? null;
+
+            // @codeCoverageIgnoreStart
+            // Both are excluded at the SQL level by the where clauses above.
+            if (! is_numeric($status) || ! is_string($url)) {
+                continue;
+            }
+            // @codeCoverageIgnoreEnd
+
+            $key = ErrorPageKey::for((int) $status, $url, is_string($referrer) ? $referrer : null);
+            $out[$key] = [Metric::Errors->value => is_numeric($data['m_errors'] ?? null) ? (float) $data['m_errors'] : 0.0];
         }
 
         return $out;
@@ -537,6 +598,7 @@ final readonly class DatabaseStorage implements Storage
             "sum(case when type = {$conversion} then coalesce(value, 0) else 0 end) as m_conversion_value",
             'sum(coalesce(duration_ms, 0)) as m_response_ms',
             'sum(case when duration_ms is null then 0 else 1 end) as m_response_samples',
+            'sum(case when status >= 400 then 1 else 0 end) as m_errors',
             'sum(coalesce(time_on_page, 0)) as m_time_on_page',
             'sum(case when time_on_page is null then 0 else 1 end) as m_time_samples',
             'sum(coalesce(scroll_depth, 0)) as m_scroll_total',
@@ -581,6 +643,7 @@ final readonly class DatabaseStorage implements Storage
             'm_conversion_value' => Metric::ConversionValue,
             'm_response_ms' => Metric::ResponseMilliseconds,
             'm_response_samples' => Metric::ResponseSamples,
+            'm_errors' => Metric::Errors,
             'm_time_on_page' => Metric::TimeOnPageSeconds,
             'm_time_samples' => Metric::TimeOnPageSamples,
             'm_scroll_total' => Metric::ScrollDepthTotal,

@@ -54,7 +54,7 @@ chart has a table underneath it. Dark mode follows your system.
 
 ![The dashboard in dark mode](https://raw.githubusercontent.com/divoto/cairn/main/art/dashboard-dark.png)
 
-Eighteen widgets ship by default, and three more — Languages, Screen sizes and
+Twenty widgets ship by default, and three more — Languages, Screen sizes and
 Exit pages — are one line of config away. Each one is a class: reorder them,
 remove them, or add your own by subclassing `Widget` — or `DimensionWidget`,
 for a ranked table of a single dimension.

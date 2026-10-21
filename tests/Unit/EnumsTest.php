@@ -43,6 +43,7 @@ it('treats only the hour as a fixed-length bucket', function (): void {
 
 it('requires a name for everything but a pageview', function (): void {
     expect(EntryType::Pageview->requiresName())->toBeFalse()
+        ->and(EntryType::NotFound->requiresName())->toBeFalse()
         ->and(EntryType::Event->requiresName())->toBeTrue()
         ->and(EntryType::Conversion->requiresName())->toBeTrue();
 });
@@ -85,10 +86,12 @@ it('materialises a deliberately small set of dimensions', function (): void {
         static fn (Dimension $d): bool => $d->isMaterialised(),
     ));
 
-    expect($materialised)->toHaveCount(18)
+    expect($materialised)->toHaveCount(20)
         ->toContain(Dimension::Route)
         ->toContain(Dimension::Country)
-        ->toContain(Dimension::EventName);
+        ->toContain(Dimension::EventName)
+        ->toContain(Dimension::Status)
+        ->toContain(Dimension::ErrorPage);
 });
 
 /**

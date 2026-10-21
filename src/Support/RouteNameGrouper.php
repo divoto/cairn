@@ -35,6 +35,19 @@ final readonly class RouteNameGrouper
     private const IDENTIFIER = '/^(\d+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-7][0-9A-HJKMNP-TV-Z]{25})$/i';
 
     /**
+     * Matches a segment that could be a secret: sixteen or more characters
+     * with at least one letter and one digit, or thirty-two or more of
+     * anything. Reset tokens, signed-link signatures, JWTs and API keys all
+     * look like this, and readable slugs almost never do.
+     */
+    private const TOKEN = '/^(?=.*\d)(?=.*[a-z]).{16,}$|^.{32,}$/i';
+
+    /**
+     * The longest URL kept for a request that matched no route.
+     */
+    private const UNMATCHED_URL_LENGTH = 255;
+
+    /**
      * Defaults to the route name, which is what an unconfigured install gets
      * and what every version before this one did.
      */
@@ -109,6 +122,31 @@ final readonly class RouteNameGrouper
         $joined = implode('/', $collapsed);
 
         return $joined === '' ? '/' : '/'.$joined;
+    }
+
+    /**
+     * The URL to store for a request that matched no route.
+     *
+     * Stricter than {@see self::url()}, because nothing vouches for the path.
+     * A matched route's path has the shape the application gave it. An
+     * unmatched path is whatever was typed or pasted, and a mangled password
+     * reset or magic link is still a credential. So identifiers and anything
+     * shaped like a token are collapsed to {id}, the query string is dropped
+     * whole, UTM keys included, and the result is capped in length.
+     */
+    public function unmatchedUrl(Request $request): string
+    {
+        $segments = array_map(
+            static fn (string $segment): string => preg_match(self::IDENTIFIER, $segment) === 1
+                || preg_match(self::TOKEN, rawurldecode($segment)) === 1
+                    ? '{id}'
+                    : $segment,
+            explode('/', trim($request->path(), '/')),
+        );
+
+        $joined = implode('/', $segments);
+
+        return mb_substr($joined === '' ? '/' : '/'.$joined, 0, self::UNMATCHED_URL_LENGTH);
     }
 
     /**

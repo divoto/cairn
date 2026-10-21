@@ -23,6 +23,16 @@ enum EntryType: string
     case Conversion = 'conversion';
 
     /**
+     * A request matched no route and was answered 404.
+     *
+     * Not a pageview: nothing was viewed, and a scanner probing for
+     * `/wp-login.php` is not traffic. Entries of this type never count as
+     * pageviews, sessions or visitors. They exist so a dead link has a row
+     * in Broken pages, which no matched route could ever give it.
+     */
+    case NotFound = 'not_found';
+
+    /**
      * Whether entries of this type may carry a monetary value.
      */
     public function supportsValue(): bool
@@ -33,11 +43,12 @@ enum EntryType: string
     /**
      * Whether entries of this type require a name.
      *
-     * A pageview is identified by its route and URL; an event or conversion is
-     * meaningless without a name to group it by.
+     * A pageview is identified by its route and URL, and a request that
+     * matched nothing by its URL; an event or conversion is meaningless
+     * without a name to group it by.
      */
     public function requiresName(): bool
     {
-        return $this !== self::Pageview;
+        return $this === self::Event || $this === self::Conversion;
     }
 }

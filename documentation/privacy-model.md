@@ -87,6 +87,16 @@ name, the path (query string stripped except UTM parameters), the referrer's
 coarse device/browser/OS enums, a language tag, an HTTP status, and a server
 duration.
 
+A request that matched no route and was answered 404 is stored too, for the
+Broken pages panel, with the same fields minus the route name and the server
+duration. Its path is scrubbed harder than a pageview's: nothing vouches for
+a path no route matched, and a mistyped password reset link is still a
+credential. Numeric ids, UUIDs, ULIDs and any segment shaped like a token are
+replaced with `{id}`, and the whole query string is dropped, UTM parameters
+included. These entries are not pageviews, and they start no session and count
+toward no visitor figure. Set `recorders.PageViews::class.not_found` to
+`false` to record none of them.
+
 A full referring URL is never stored. It can carry a search query, a session
 token, or the title of a private document.
 

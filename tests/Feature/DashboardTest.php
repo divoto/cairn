@@ -474,7 +474,7 @@ it('caps a filter value read from the URL', function (): void {
 */
 
 it('registers every shipped widget', function (): void {
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(19);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(20);
 });
 
 /**
@@ -492,7 +492,7 @@ it('falls back to the shipped widgets when config predates the key', function ()
         // No 'widgets' key, exactly as an older published config would have.
     ]);
 
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(19);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(20);
 
     cairnTest()->get('/cairn')->assertOk()->assertSee('Top routes');
 });

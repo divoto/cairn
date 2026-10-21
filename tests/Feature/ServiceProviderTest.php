@@ -7,6 +7,7 @@ use Divoto\Cairn\Contracts\Ingest;
 use Divoto\Cairn\Contracts\Presence;
 use Divoto\Cairn\Contracts\Storage;
 use Divoto\Cairn\Contracts\UniqueCounter;
+use Divoto\Cairn\Http\Middleware\RecordNotFound;
 use Divoto\Cairn\Recorders\ClientMetrics;
 use Divoto\Cairn\Recorders\PageViews;
 use Illuminate\Console\Scheduling\Schedule;
@@ -115,6 +116,7 @@ it('leaves the host application untouched when disabled', function (bool $enable
     $api = invokeProviderRouting('registerApi');
 
     expect($kernel->getMiddlewareGroups()['web'] !== [])->toBe($enabled)
+        ->and($kernel->getGlobalMiddleware() !== [])->toBe($enabled)
         ->and($beacon->getRoutes()->hasNamedRoute('cairn.collect'))->toBe($enabled)
         ->and($api->getRoutes()->getRoutes() !== [])->toBe($enabled)
         ->and($schedule->events() !== [])->toBe($enabled);
@@ -172,6 +174,36 @@ it('does not register the pageview middleware when that recorder is switched off
         app()->instance(Kernel::class, $original);
     }
 });
+
+/**
+ * Unset is on: a config file published before the key existed has no
+ * `not_found` entry at all, and should get the panel like a fresh install.
+ */
+it('registers the unmatched-request recorder unless it is switched off', function (mixed $setting, bool $registered): void {
+    config()->set('cairn.enabled', true);
+    config()->set('cairn.recorders.'.PageViews::class.'.enabled', true);
+    config()->set('cairn.recorders.'.PageViews::class.'.not_found', $setting);
+
+    $kernel = new class(app(), app('router')) extends Illuminate\Foundation\Http\Kernel
+    {
+        protected $middlewareGroups = ['web' => []];
+    };
+
+    $original = app(Kernel::class);
+    app()->instance(Kernel::class, $kernel);
+
+    try {
+        invokeProvider('registerMiddleware');
+
+        expect(in_array(RecordNotFound::class, $kernel->getGlobalMiddleware(), true))->toBe($registered);
+    } finally {
+        app()->instance(Kernel::class, $original);
+    }
+})->with([
+    'on' => [true, true],
+    'unset' => [null, true],
+    'off' => [false, false],
+]);
 
 it('does nothing when no HTTP kernel is bound', function (): void {
     config()->set('cairn.enabled', true);
