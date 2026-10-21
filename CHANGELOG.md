@@ -14,6 +14,21 @@ release.
 
 ## [Unreleased]
 
+### Added
+
+- **Slowest routes.** Every pageview has carried its server response time
+  since 1.0, and the rollup has stored it per route, but no panel read it. A
+  new panel ranks routes by average response time, next to Core Web Vitals, so
+  "the server is slow" and "the page is slow" read as two separate answers.
+  Routes with fewer than five pageviews in the period are left out, because an
+  average of one request is mostly noise. Nothing new is recorded. If your
+  published config lists its widgets, add
+  `Divoto\Cairn\Widgets\Shipped\SlowestRoutes::class` to show it.
+
+- **`Report::minimum()`** leaves out rows where a metric is below a floor. It
+  applies before ordering and the limit, so a ranked table still fills to its
+  limit from the rows that qualify.
+
 ### Changed
 
 - **The dashboard opens on Today.** It used to open on the last 30 days. With

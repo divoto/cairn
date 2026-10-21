@@ -24,6 +24,7 @@ use Divoto\Cairn\Widgets\Shipped\LandingPages;
 use Divoto\Cairn\Widgets\Shipped\Languages;
 use Divoto\Cairn\Widgets\Shipped\Overview;
 use Divoto\Cairn\Widgets\Shipped\ScreenSizes;
+use Divoto\Cairn\Widgets\Shipped\SlowestRoutes;
 use Divoto\Cairn\Widgets\Shipped\TopRoutes;
 use Divoto\Cairn\Widgets\Shipped\WebVitals;
 use Divoto\Cairn\Widgets\Widget;
@@ -473,7 +474,7 @@ it('caps a filter value read from the URL', function (): void {
 */
 
 it('registers every shipped widget', function (): void {
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(18);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(19);
 });
 
 /**
@@ -491,7 +492,7 @@ it('falls back to the shipped widgets when config predates the key', function ()
         // No 'widgets' key, exactly as an older published config would have.
     ]);
 
-    expect(app(WidgetRegistry::class)->all())->toHaveCount(18);
+    expect(app(WidgetRegistry::class)->all())->toHaveCount(19);
 
     cairnTest()->get('/cairn')->assertOk()->assertSee('Top routes');
 });
@@ -769,6 +770,88 @@ it('tells the reader the beacon is on but has measured nothing in the period', f
         ->assertOk()
         ->assertSee('The optional JavaScript beacon is enabled, but no browser has reported a measurement in this period.')
         ->assertDontSee('which is not enabled');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Slowest routes
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * Three routes: a fast one and a slow one with enough traffic to rank, and a
+ * rarely visited one whose single request was the slowest of all.
+ */
+function seedResponseTimes(): void
+{
+    $today = CarbonImmutable::now('UTC')->startOfDay()->addHours(9);
+
+    $requests = [
+        ...array_fill(0, 5, ['home.index', 40]),
+        ...array_fill(0, 5, ['report.show', 900]),
+        ['admin.export', 8000],
+    ];
+
+    foreach ($requests as $index => [$route, $duration]) {
+        /** @var Collection<int, Entry> $collection */
+        $collection = new Collection([new Entry(
+            occurredAt: $today->addMinutes($index),
+            type: EntryType::Pageview,
+            visitor: random_bytes(16),
+            route: $route,
+            url: '/'.$route,
+            durationMs: $duration,
+        )]);
+
+        app(Storage::class)->store($collection);
+    }
+
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Day);
+    app(Storage::class)->rollup($today->startOfDay(), $today->endOfDay(), Period::Hour);
+}
+
+it('ranks routes by their average response time', function (): void {
+    seedResponseTimes();
+
+    $rows = app(SlowestRoutes::class)->rows(new Filters(range: 'today'));
+
+    expect($rows)->toHaveCount(2)
+        ->and(row($rows, 0)->dimension('route'))->toBe('report.show')
+        ->and(row($rows, 0)->metric(Metric::AvgResponseTime))->toBe(900.0)
+        ->and(row($rows, 0)->metric(Metric::Pageviews))->toBe(5.0)
+        ->and(row($rows, 1)->dimension('route'))->toBe('home.index');
+});
+
+/**
+ * One 8-second request is not a slow route, it is one slow request. Ranked,
+ * it would sit above the route people are actually waiting on.
+ */
+it('does not rank a route with too few pageviews to average', function (): void {
+    seedResponseTimes();
+
+    $routes = app(SlowestRoutes::class)->rows(new Filters(range: 'today'))
+        ->map(static fn (ReportRow $row): string => (string) $row->dimension('route'))
+        ->all();
+
+    expect(in_array('admin.export', $routes, true))->toBeFalse();
+});
+
+it('renders the slowest routes panel', function (): void {
+    seedResponseTimes();
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Slowest routes')
+        ->assertSee('report.show');
+});
+
+it('says nothing has been recorded when no route has enough traffic', function (): void {
+    config()->set('cairn.dashboard.widgets', [SlowestRoutes::class]);
+
+    cairnTest()->get('/cairn')
+        ->assertOk()
+        ->assertSee('Slowest routes')
+        ->assertSee('Nothing recorded in this period.');
 });
 
 /*
