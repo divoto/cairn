@@ -144,7 +144,7 @@ it('names every range it offers', function (): void {
 });
 
 it('falls back to a default label for an unknown range', function (): void {
-    expect((new Filters(range: 'nonsense'))->rangeLabel())->toBe('Last 30 days');
+    expect((new Filters(range: 'nonsense'))->rangeLabel())->toBe('Today');
 });
 
 it('reads a comparison out of the query string', function (): void {

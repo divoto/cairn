@@ -36,8 +36,14 @@ final readonly class Filters
         '12m' => 365,
     ];
 
+    /**
+     * The range the dashboard opens on, and falls back to for one it does
+     * not recognise.
+     */
+    public const DEFAULT_RANGE = 'today';
+
     public function __construct(
-        public string $range = '30d',
+        public string $range = self::DEFAULT_RANGE,
         public Comparison $comparison = Comparison::PreviousPeriod,
         public ?string $route = null,
         public ?string $country = null,
@@ -56,7 +62,7 @@ final readonly class Filters
         $comparison = $request->query('compare');
 
         return new self(
-            range: is_string($range) && isset(self::RANGES[$range]) ? $range : '30d',
+            range: is_string($range) && isset(self::RANGES[$range]) ? $range : self::DEFAULT_RANGE,
             comparison: is_string($comparison)
                 ? (Comparison::tryFrom($comparison) ?? Comparison::PreviousPeriod)
                 : Comparison::PreviousPeriod,
@@ -76,7 +82,7 @@ final readonly class Filters
      */
     public function window(): array
     {
-        $days = self::RANGES[$this->range] ?? 30;
+        $days = self::RANGES[$this->range] ?? self::RANGES[self::DEFAULT_RANGE];
         $to = CarbonImmutable::now('UTC')->endOfDay();
 
         return [$to->subDays($days - 1)->startOfDay(), $to];
@@ -119,7 +125,7 @@ final readonly class Filters
      */
     public function rangeLabel(): string
     {
-        return self::ranges()[$this->range] ?? 'Last 30 days';
+        return self::ranges()[$this->range] ?? self::ranges()[self::DEFAULT_RANGE];
     }
 
     /**
