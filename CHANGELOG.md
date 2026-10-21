@@ -12,7 +12,14 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
-## [Unreleased]
+## [1.3.0] - 2026-10-21
+
+The dashboard opens on Today, and two new panels report numbers Cairn was
+already recording: how long each route takes to answer, and which pages
+fail. Broken pages also adds the one new kind of record in this release, for
+links to URLs with no route, which never reached Cairn before. These are kept
+apart from pageviews, and their URLs are scrubbed of anything shaped like a
+credential.
 
 ### Added
 
@@ -639,6 +646,8 @@ First public release.
   matrix covering SQLite, MySQL 8, MariaDB 11 and PostgreSQL 16.
 
 [Unreleased]: https://github.com/divoto/cairn/commits/main
+
+[1.3.0]: https://github.com/divoto/cairn/releases/tag/v1.3.0
 
 [1.2.2]: https://github.com/divoto/cairn/releases/tag/v1.2.2
 
