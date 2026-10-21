@@ -67,6 +67,9 @@ final class Report
 
     private ?int $limit = null;
 
+    /** @var array<string, float> */
+    private array $minimums = [];
+
     public function __construct(
         private readonly Storage $storage,
         private readonly UniqueCounter $uniques,
@@ -163,6 +166,25 @@ final class Report
     }
 
     /**
+     * Leave out rows where a metric falls below a floor.
+     *
+     * Applied before ordering and the limit, so a ranked table still fills to
+     * its limit from the rows that qualify. Filtering afterwards would quietly
+     * shrink it. A row with no figure for the metric is left out too, so the
+     * metric has to be one the report asks for.
+     *
+     * Exists for averages, which rank badly on small samples: one slow request
+     * to a route visited once puts that route at the top of "slowest routes",
+     * above the route everyone is actually waiting on.
+     */
+    public function minimum(Metric $metric, float $value): self
+    {
+        $this->minimums[$metric->value] = $value;
+
+        return $this;
+    }
+
+    /**
      * The report, one row per dimension value.
      *
      * With no grouping this is a single row of site-wide totals.
@@ -179,7 +201,7 @@ final class Report
             $rows = $this->attachComparison($rows);
         }
 
-        $rows = $this->sort($rows);
+        $rows = $this->sort($this->applyMinimums($rows));
 
         if ($this->limit !== null) {
             $rows = $rows->take($this->limit);
@@ -562,6 +584,32 @@ final class Report
                 $value = (string) ($row->dimension($key) ?? '');
 
                 if (! in_array($value, $accepted, true)) {
+                    return false;
+                }
+            }
+
+            return true;
+        })->values();
+    }
+
+    /**
+     * Drop rows below a configured floor.
+     *
+     * @param  Collection<int, ReportRow>  $rows
+     * @return Collection<int, ReportRow>
+     */
+    private function applyMinimums(Collection $rows): Collection
+    {
+        if ($this->minimums === []) {
+            return $rows;
+        }
+
+        /** @var Collection<int, ReportRow> */
+        return $rows->filter(function (ReportRow $row): bool {
+            foreach ($this->minimums as $metric => $floor) {
+                $value = $row->metrics[$metric] ?? null;
+
+                if ($value === null || $value < $floor) {
                     return false;
                 }
             }

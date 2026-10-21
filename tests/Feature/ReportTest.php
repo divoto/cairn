@@ -171,6 +171,44 @@ it('breaks a metric down by a dimension', function (): void {
         ->and(row($rows, 1)->metric(Metric::Pageviews))->toBe(1.0);
 });
 
+/**
+ * The floor applies before the limit. Pricing has three pageviews, home and
+ * docs one each: with a floor of two and a limit of one, the table still has
+ * its one row. Filtering after the limit would have taken home's row first and
+ * then thrown it away, leaving nothing.
+ */
+it('leaves out rows below a minimum before applying the limit', function (): void {
+    seedDataset();
+
+    $rows = aReport()
+        ->metrics(Metric::Pageviews)
+        ->groupBy(Dimension::Route)
+        ->minimum(Metric::Pageviews, 2)
+        ->orderBy(Metric::Pageviews)
+        ->limit(1)
+        ->get();
+
+    expect($rows)->toHaveCount(1)
+        ->and(row($rows)->dimension('route'))->toBe('pricing.index');
+});
+
+/**
+ * A row with no figure for the metric has not met the floor. A derived
+ * metric with a zero denominator is omitted from the row, and treating that
+ * as passing would rank exactly the rows the floor exists to keep out.
+ */
+it('leaves out rows with no figure for a minimum metric', function (): void {
+    seedDataset();
+
+    $rows = aReport()
+        ->metrics(Metric::Pageviews, Metric::AvgResponseTime)
+        ->groupBy(Dimension::Route)
+        ->minimum(Metric::AvgResponseTime, 0)
+        ->get();
+
+    expect($rows)->toBeEmpty();
+});
+
 it('breaks a metric down by country', function (): void {
     seedDataset();
 
