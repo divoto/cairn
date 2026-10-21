@@ -58,6 +58,20 @@ final readonly class EntryFactory
     }
 
     /**
+     * Build an entry for a request that matched no route.
+     *
+     * The route is left empty rather than falling back to the path, as a
+     * pageview's would. Every probe a scanner makes has a different path, and
+     * as route names they would crowd out the real ones in Top routes. The URL
+     * is scrubbed harder than a pageview's; see
+     * {@see RouteNameGrouper::unmatchedUrl()}.
+     */
+    public function notFound(Request $request): Entry
+    {
+        return $this->build($request, EntryType::NotFound, status: 404, routed: false);
+    }
+
+    /**
      * Build an event or conversion entry for a request.
      *
      * @param  array<string, scalar|null>|null  $properties
@@ -106,6 +120,7 @@ final readonly class EntryFactory
         ?string $value = null,
         ?string $subjectType = null,
         int|string|null $subjectId = null,
+        bool $routed = true,
     ): Entry {
         $now = CarbonImmutable::now('UTC');
 
@@ -127,8 +142,8 @@ final readonly class EntryFactory
             visitor: $visitor,
             session: $session->id,
             name: $name,
-            route: $this->routes->group($request),
-            url: $this->routes->url($request),
+            route: $routed ? $this->routes->group($request) : null,
+            url: $routed ? $this->routes->url($request) : $this->routes->unmatchedUrl($request),
             referrerHost: $this->channels->referrerHost($request),
             channel: $this->channels->classify($request),
             utmSource: $campaign['utm_source'],

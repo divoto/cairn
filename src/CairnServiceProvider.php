@@ -32,6 +32,7 @@ use Divoto\Cairn\Enums\RouteGrouping;
 use Divoto\Cairn\Geo\NullGeoResolver;
 use Divoto\Cairn\Http\Middleware\Authorize;
 use Divoto\Cairn\Http\Middleware\EnsureApiEnabled;
+use Divoto\Cairn\Http\Middleware\RecordNotFound;
 use Divoto\Cairn\Http\Middleware\TrackPageView;
 use Divoto\Cairn\Identity\SessionResolver;
 use Divoto\Cairn\Identity\VisitorHasher;
@@ -359,6 +360,10 @@ final class CairnServiceProvider extends ServiceProvider
      * Pushed rather than prepended, so it wraps as little as possible, and
      * registered only when the recorder is enabled. It records from
      * `terminate()`, so its position in the stack costs the visitor nothing.
+     *
+     * Requests that match no route never reach a middleware group, so the
+     * recorder for those is global. It is on unless `not_found` is false, so
+     * a config file published before the key existed gets it too.
      */
     private function registerMiddleware(): void
     {
@@ -378,6 +383,10 @@ final class CairnServiceProvider extends ServiceProvider
 
         if ($kernel instanceof \Illuminate\Foundation\Http\Kernel) {
             $kernel->appendMiddlewareToGroup('web', TrackPageView::class);
+
+            if ($this->app->make(Repository::class)->get('cairn.recorders.'.PageViews::class.'.not_found') !== false) {
+                $kernel->pushMiddleware(RecordNotFound::class);
+            }
         }
     }
 

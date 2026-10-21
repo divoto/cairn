@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Divoto\Cairn\Enums;
 
 use Divoto\Cairn\Support\CountryNames;
+use Divoto\Cairn\Support\ErrorPageKey;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Something a report can be grouped or filtered by.
@@ -77,11 +79,25 @@ enum Dimension: string
     /** The `name` column, when the entry is an event or a conversion. */
     case EventName = 'name';
 
+    /** The HTTP status the request was answered with. */
+    case Status = 'status';
+
+    /**
+     * A failed request: its status, its URL and the host that sent the
+     * visitor there, as one key. {@see ErrorPageKey}
+     *
+     * Composite like Subject, and narrower than any other dimension: only
+     * requests answered 4xx or 5xx are measured, and only the most frequent
+     * combinations in each bucket are kept. A scanner probing a thousand
+     * paths an hour would otherwise grow this rollup without limit.
+     */
+    case ErrorPage = 'error_page';
+
     /**
      * The column on `cairn_entries` this dimension reads from.
      *
-     * Subject is the exception: it is measured from two columns rather than
-     * one, and storage branches for it rather than asking here.
+     * Subject and ErrorPage are the exceptions: each is measured from more
+     * than one column, and storage branches for them rather than asking here.
      * {@see self::isComposite()}
      */
     public function column(): string
@@ -92,13 +108,14 @@ enum Dimension: string
     /**
      * Whether this dimension is built from more than one column.
      *
-     * Only Subject, which is `subject_type` and `subject_id` combined into a
-     * single key. Keeping the exception named means the generic grouping path
-     * stays untouched by it.
+     * Subject, which is `subject_type` and `subject_id` combined into a
+     * single key, and ErrorPage, which is a status, a URL and a referring
+     * host. Keeping the exceptions named means the generic grouping path
+     * stays untouched by them.
      */
     public function isComposite(): bool
     {
-        return $this === self::Subject;
+        return $this === self::Subject || $this === self::ErrorPage;
     }
 
     /**
@@ -142,7 +159,9 @@ enum Dimension: string
             self::EntryPage,
             self::ExitPage,
             self::Subject,
-            self::EventName => true,
+            self::EventName,
+            self::Status,
+            self::ErrorPage => true,
             default => false,
         };
     }
@@ -209,6 +228,16 @@ enum Dimension: string
             return CountryNames::label((string) $value) ?? (string) $value;
         }
 
+        if ($this === self::ErrorPage) {
+            return ErrorPageKey::label((string) $value);
+        }
+
+        if ($this === self::Status) {
+            $text = Response::$statusTexts[(int) $value] ?? null;
+
+            return $text === null ? (string) $value : $value.' '.$text;
+        }
+
         $numeric = is_numeric($value) ? (int) $value : null;
 
         if ($numeric !== null) {
@@ -256,6 +285,8 @@ enum Dimension: string
             self::ExitPage => 'Exit page',
             self::Subject => 'Content',
             self::EventName => 'Event',
+            self::Status => 'Status',
+            self::ErrorPage => 'Broken page',
         };
     }
 }

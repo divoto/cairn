@@ -6,6 +6,7 @@ namespace Divoto\Cairn\Widgets;
 
 use Divoto\Cairn\CairnServiceProvider;
 use Divoto\Cairn\Widgets\Shipped\ActivityFeed;
+use Divoto\Cairn\Widgets\Shipped\BrokenPages;
 use Divoto\Cairn\Widgets\Shipped\Browsers;
 use Divoto\Cairn\Widgets\Shipped\Campaigns;
 use Divoto\Cairn\Widgets\Shipped\Channels;
@@ -83,6 +84,7 @@ final readonly class WidgetRegistry
         TopContent::class,
         WebVitals::class,
         SlowestRoutes::class,
+        BrokenPages::class,
         ActivityFeed::class,
     ];
 

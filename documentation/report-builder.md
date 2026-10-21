@@ -26,6 +26,23 @@ Cairn::report()
 `Cairn::report()` returns a fresh builder each call, so two widgets on a page
 cannot contaminate each other's filters.
 
+`minimum(Metric, float)` leaves out rows where a metric is below a floor. It
+applies before ordering and the limit, so a ranked table still fills to its
+limit from the rows that qualify. Use it with averages, which rank badly on
+small samples:
+
+```php
+Cairn::report()
+    ->metrics(Metric::AvgResponseTime, Metric::Pageviews)
+    ->groupBy(Dimension::Route)
+    ->minimum(Metric::Pageviews, 5)
+    ->orderByDesc(Metric::AvgResponseTime)
+    ->get();
+```
+
+A row with no figure for the metric is left out too, so the metric has to be
+one the report asks for.
+
 ## Output
 
 | Method | Returns |
@@ -162,12 +179,12 @@ is asked as `groupBy(Route)->filter(Country, 'DE')` or as two filters at once.
 
 Route · Referrer host · Channel · UTM source/medium/campaign/term/content ·
 Country · Device type · Browser · Operating system · Language · Screen class ·
-Landing page · Exit page · Content · Event name
+Landing page · Exit page · Content · Event name · Status · Broken page
 
 Adding one means every rollup writes more rows for every bucket, forever, so
 the list is deliberately short.
 
-Most of them are columns on `cairn_entries`. Three are not:
+Most of them are columns on `cairn_entries`. Four are not:
 
 **Landing page and exit page** are columns on `cairn_sessions`, which is what
 lets them report a bounce rate and an average duration per value — numbers the
@@ -195,6 +212,29 @@ A subject never reaches a pageview: `trackView()`, `trackEvent()` and
 `trackConversion()` all record events or conversions. So for this dimension
 `Pageviews` counts views and `Events` counts everything else, which keeps an
 article's event count from silently including its views.
+
+**Broken page** is a failed request, keyed as a status, a URL and the host
+that sent the visitor there, so one row is one broken link as someone else is
+hosting it:
+
+```php
+Cairn::report()
+    ->metrics(Metric::Errors)
+    ->groupBy(Dimension::ErrorPage)
+    ->orderByDesc(Metric::Errors)
+    ->get();
+```
+
+The key is a JSON array, `[404, "/old-pricing", "blog.example.com"]`, with
+`null` for no referrer. `Dimension::ErrorPage->display()` turns it into
+`404 · /old-pricing · from blog.example.com`. `Errors` is the only metric this
+dimension carries. Only requests answered 4xx or 5xx are measured, and only the
+hundred most frequent combinations in each bucket are kept, because the URLs
+come from whatever a stranger types and would otherwise grow the rollup without
+limit.
+
+`Errors` is also measured for every other entry dimension, so the errors on a
+route, or from a referrer, are real numbers too.
 
 ### Reading a model's own numbers
 
