@@ -52,7 +52,7 @@ final class Dashboard extends Component
     public bool $embedded = true;
 
     #[Url(as: 'range', keep: true)]
-    public string $range = '30d';
+    public string $range = Filters::DEFAULT_RANGE;
 
     #[Url(as: 'compare', keep: true)]
     public string $compare = 'previous_period';

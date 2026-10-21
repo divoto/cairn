@@ -265,10 +265,18 @@ it('marks the selected range', function (): void {
     cairnTest()->get('/cairn?range=7d')->assertOk()->assertSee('aria-current="true"', false);
 });
 
+it('opens on today, charted by the hour', function (): void {
+    $filters = Filters::fromRequest(Request::create('/cairn'));
+
+    expect($filters->range)->toBe('today')
+        ->and($filters->interval())->toBe(Period::Hour)
+        ->and($filters->rangeLabel())->toBe('Today');
+});
+
 it('falls back to the default range for an unknown one', function (): void {
     $filters = Filters::fromRequest(Request::create('/cairn?range=nonsense'));
 
-    expect($filters->range)->toBe('30d');
+    expect($filters->range)->toBe('today');
 });
 
 it('shows a removable chip for an active filter', function (): void {

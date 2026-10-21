@@ -12,6 +12,16 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [Unreleased]
+
+### Changed
+
+- **The dashboard opens on Today.** It used to open on the last 30 days. With
+  no `range` in the URL — and for a range it does not recognise — every
+  dashboard driver now shows the current day, charted hour by hour. The other
+  ranges are unchanged and still one click away, and a link or bookmark that
+  names a range keeps opening on it.
+
 ## [1.2.2] - 2026-09-16
 
 The dashboard's cost no longer grows with the amount of traffic it is
