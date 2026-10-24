@@ -143,6 +143,21 @@ it('accepts several metrics', function (): void {
         ->toHaveKey(Metric::Pageviews->value);
 });
 
+it('compares against the window it is asked for', function (): void {
+    seedApiTraffic();
+
+    $compared = cairnTest()
+        ->getJson('/cairn/api/report?range=today&compare=previous_period')
+        ->assertOk();
+
+    $uncompared = cairnTest()
+        ->getJson('/cairn/api/report?range=today&compare=none')
+        ->assertOk();
+
+    expect($compared->json('data.0.attributes'))->toHaveKey('previous')
+        ->and($uncompared->json('data.0.attributes'))->not->toHaveKey('previous');
+});
+
 it('reports the interval it charted at', function (): void {
     cairnTest()->getJson('/cairn/api/report?range=7d&interval=hour&timeseries=1')
         ->assertOk()
