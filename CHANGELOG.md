@@ -12,6 +12,52 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
+## [Unreleased]
+
+Fixes to the JSON API, found by calling it from a real application. A limit
+now keeps the top rows, a disabled API is a 404 behind any auth middleware,
+and a request the endpoint cannot read is refused instead of being answered
+as a different question.
+
+### Fixed
+
+- **`limit` kept whichever rows came first, not the top ones.** A grouped
+  report was never ranked, so `group_by=language&limit=5` returned five rows
+  in storage order and could leave out the busiest. Grouped rows are now
+  ranked by the first metric in `metrics`, highest first, before the limit is
+  applied.
+- **A disabled API answered before its 404.** The availability check ran
+  after the configured middleware, so with the default `auth:sanctum` an
+  application without Sanctum got a 500 and one with it got a 401, which
+  tells an anonymous caller that something is there. The check now runs
+  first, and a disabled endpoint is a 404 whatever it sits behind.
+- **Dimension filters were read and then ignored.** `route`, `country`,
+  `channel`, `language`, `screen_class` and `entry_url` narrow the report the
+  way they narrow the dashboard. Two at once, or one alongside a different
+  `group_by`, is refused with the same 422 as any other combination that was
+  never rolled up.
+- **`meta.interval` named the range's default interval** even when
+  `interval` asked for another one. It now names the interval the rows were
+  charted at.
+
+### Changed
+
+- **The API refuses what it cannot read.** An unknown parameter, or a value
+  it does not recognise for `range`, `compare`, `interval`, `group_by`,
+  `metrics`, `limit` or `timeseries`, is a 422 naming the parameter in
+  `source.parameter` and listing the accepted values. Before, `period=7d` was
+  answered with Today, `group_by=bogus` with the site-wide total, and an
+  unknown metric with pageviews, all as a 200.
+- **A broken page is an object.** A row grouped by `error_page` carries
+  `{"status": 404, "url": "/does-not-exist", "referrer": "blog.example.com"}`
+  rather than the same three values as a JSON-encoded string.
+
+### Upgrading
+
+A client that sent parameters the API did not read, such as a cache-busting
+`_=…`, now gets a 422 and should stop sending them. A client that decoded
+`error_page` itself should read the fields instead.
+
 ## [1.3.0] - 2026-10-21
 
 The dashboard opens on Today, and two new panels report numbers Cairn was

@@ -490,11 +490,15 @@ final class CairnServiceProvider extends ServiceProvider
         // without a route-cache rebuild, and a disabled endpoint 404s — to
         // anybody who has not been told it exists, indistinguishable from one
         // that was never built.
+        //
+        // First, ahead of the deployer's middleware. After it, auth answers
+        // first: a 401 to an anonymous caller, which says an endpoint is
+        // there, or a 500 where the configured guard does not exist.
         $this->app->make(Registrar::class)->group([
             'prefix' => (is_string($path) && $path !== '' ? $path : 'cairn').'/api',
             'middleware' => [
-                ...(is_array($middleware) ? $middleware : ['api']),
                 EnsureApiEnabled::class,
+                ...(is_array($middleware) ? $middleware : ['api']),
             ],
             'as' => 'cairn.',
         ], function (): void {
