@@ -73,20 +73,24 @@ it('caches the configuration', function (): void {
 /**
  * The Pulse cards must be unreachable through the always-on namespace, or
  * moving the files bought nothing.
+ *
+ * Larastan resolves a literal view name against the view directories and
+ * reports these as always missing. The names come through a dataset so the
+ * test still asks the runtime, through the namespaces the provider actually
+ * registered, which is the part a static read cannot see.
  */
-it('exposes the Pulse cards only through their own namespace', function (): void {
+it('exposes the Pulse cards only through their own namespace', function (string $view): void {
     $views = app(ViewFactory::class);
     $finder = $views->getFinder();
 
-    expect($views->exists('cairn::pulse.live-visitors'))->toBeFalse()
-        ->and($views->exists('cairn::pulse.top-routes'))->toBeFalse()
+    expect($views->exists($view))->toBeFalse()
         ->and($finder)->toBeInstanceOf(FileViewFinder::class);
 
     $hints = $finder instanceof FileViewFinder ? $finder->getHints() : [];
 
     expect($hints)->toHaveKey('cairn')
         ->and($hints)->not->toHaveKey('cairn-pulse');
-});
+})->with(['cairn::pulse.live-visitors', 'cairn::pulse.top-routes']);
 
 /**
  * They must not travel with the tag that restyles the dashboard either.
