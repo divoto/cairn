@@ -201,6 +201,14 @@ it('records nothing when switched off in config', function (): void {
     expect(brokenEntries()->count())->toBe(0);
 });
 
+it('records nothing for an unmatched path the application ignores', function (): void {
+    Cairn::ignore('old-*');
+
+    follow('/old-pricing')->assertNotFound();
+
+    expect(brokenEntries()->count())->toBe(0);
+});
+
 it('swallows a failure rather than passing it to the host application', function (): void {
     cairnStorageGone();
 
@@ -261,6 +269,16 @@ it('rolls failures up by status, URL and referring host', function (): void {
     expect($rows)->toHaveCount(3)
         ->and(row($rows)->dimension('error_page'))->toBe(ErrorPageKey::for(404, '/old-pricing', 'blog.example.com'))
         ->and(row($rows)->metric(Metric::Errors))->toBe(2.0);
+});
+
+/**
+ * A broken page is a failed request, so the one thing there is to count about
+ * it is how many times it failed. Anything else asked of the dimension is
+ * withheld rather than borrowed from the site-wide figure.
+ */
+it('measures only errors for a broken page', function (): void {
+    expect(Metric::Errors->isMeasuredFor(Dimension::ErrorPage))->toBeTrue()
+        ->and(Metric::Pageviews->isMeasuredFor(Dimension::ErrorPage))->toBeFalse();
 });
 
 it('counts the errors on each route', function (): void {
