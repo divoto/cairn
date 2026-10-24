@@ -12,53 +12,7 @@ will not break within a major version. Anything under `Divoto\Cairn\Support`,
 the storage schema and the Blade markup are internal and may change in a minor
 release.
 
-## [Unreleased]
-
-Fixes to the JSON API, found by calling it from a real application. A limit
-now keeps the top rows, a disabled API is a 404 behind any auth middleware,
-and a request the endpoint cannot read is refused instead of being answered
-as a different question.
-
-### Fixed
-
-- **`limit` kept whichever rows came first, not the top ones.** A grouped
-  report was never ranked, so `group_by=language&limit=5` returned five rows
-  in storage order and could leave out the busiest. Grouped rows are now
-  ranked by the first metric in `metrics`, highest first, before the limit is
-  applied.
-- **A disabled API answered before its 404.** The availability check ran
-  after the configured middleware, so with the default `auth:sanctum` an
-  application without Sanctum got a 500 and one with it got a 401, which
-  tells an anonymous caller that something is there. The check now runs
-  first, and a disabled endpoint is a 404 whatever it sits behind.
-- **Dimension filters were read and then ignored.** `route`, `country`,
-  `channel`, `language`, `screen_class` and `entry_url` narrow the report the
-  way they narrow the dashboard. Two at once, or one alongside a different
-  `group_by`, is refused with the same 422 as any other combination that was
-  never rolled up.
-- **`meta.interval` named the range's default interval** even when
-  `interval` asked for another one. It now names the interval the rows were
-  charted at.
-
-### Changed
-
-- **The API refuses what it cannot read.** An unknown parameter, or a value
-  it does not recognise for `range`, `compare`, `interval`, `group_by`,
-  `metrics`, `limit` or `timeseries`, is a 422 naming the parameter in
-  `source.parameter` and listing the accepted values. Before, `period=7d` was
-  answered with Today, `group_by=bogus` with the site-wide total, and an
-  unknown metric with pageviews, all as a 200.
-- **A broken page is an object.** A row grouped by `error_page` carries
-  `{"status": 404, "url": "/does-not-exist", "referrer": "blog.example.com"}`
-  rather than the same three values as a JSON-encoded string.
-
-### Upgrading
-
-A client that sent parameters the API did not read, such as a cache-busting
-`_=…`, now gets a 422 and should stop sending them. A client that decoded
-`error_page` itself should read the fields instead.
-
-## [1.3.0] - 2026-10-21
+## [1.3.0] - 2026-10-24
 
 The dashboard opens on Today, and two new panels report numbers Cairn was
 already recording: how long each route takes to answer, and which pages
@@ -66,6 +20,11 @@ fail. Broken pages also adds the one new kind of record in this release, for
 links to URLs with no route, which never reached Cairn before. These are kept
 apart from pageviews, and their URLs are scrubbed of anything shaped like a
 credential.
+
+The JSON API is fixed in several places, found by calling it from a real
+application. A limit keeps the top rows, a disabled API is a 404 whatever
+auth middleware it sits behind, and a request the endpoint cannot read is
+refused instead of being answered as a different question.
 
 ### Added
 
@@ -92,7 +51,8 @@ credential.
   count toward no visitor figure, and leave the route empty, so a scanner
   working through a list of paths moves no number except Broken pages. The
   privacy gate applies as it does to a pageview: Do Not Track, Global Privacy
-  Control, opt-out, consent, bots and sampling.
+  Control, opt-out, consent, bots and sampling. A path passed to
+  `Cairn::ignore()` is skipped here too.
 
   Their URLs are scrubbed harder than a pageview's, because nothing vouches
   for a path no route matched, and a mistyped reset link is still a
@@ -103,17 +63,42 @@ credential.
 
 - **`Metric::Errors`**, the number of requests answered 4xx or 5xx. It is
   measured for every entry dimension, so the errors on a route are a real
-  number.
+  number. It is the only metric measured for `Dimension::ErrorPage`.
 
 - **`Dimension::Status`** and **`Dimension::ErrorPage`**, both rolled up.
   ErrorPage keeps the hundred most frequent status, URL and referrer
   combinations in each bucket, because failed URLs come from whatever a
   stranger types and would otherwise grow the rollup without limit. Its key is
-  a JSON array, `[404, "/old-pricing", "blog.example.com"]`.
+  a JSON array, `[404, "/old-pricing", "blog.example.com"]`. The JSON API
+  decodes it, so a client reads
+  `{"status": 404, "url": "/old-pricing", "referrer": "blog.example.com"}`
+  rather than a string to parse.
 
 - **`Report::minimum()`** leaves out rows where a metric is below a floor. It
   applies before ordering and the limit, so a ranked table still fills to its
   limit from the rows that qualify.
+
+### Fixed
+
+- **The API's `limit` kept whichever rows came first, not the top ones.** A
+  grouped report was never ranked, so `group_by=language&limit=5` returned
+  five rows in storage order and could leave out the busiest. Grouped rows
+  are now ranked by the first metric in `metrics`, highest first, before the
+  limit is applied.
+- **A disabled API answered before its 404.** The availability check ran
+  after the configured middleware, so with the default `auth:sanctum` an
+  application without Sanctum got a 500 and one with it got a 401, which
+  tells an anonymous caller that something is there. The check now runs
+  first, and a disabled endpoint is a 404 whatever it sits behind.
+- **The API read dimension filters and then ignored them.** `route`,
+  `country`, `channel`, `language`, `screen_class` and `entry_url` now narrow
+  the report the way they narrow the dashboard, so a dashboard link's query
+  string works against the API unchanged. Two at once, or one alongside a
+  different `group_by`, is refused with the same 422 as any other combination
+  that was never rolled up.
+- **The API's `meta.interval` named the range's default interval** even when
+  `interval` asked for another one. It now names the interval the rows were
+  charted at.
 
 ### Changed
 
@@ -122,6 +107,37 @@ credential.
   dashboard driver now shows the current day, charted hour by hour. The other
   ranges are unchanged and still one click away, and a link or bookmark that
   names a range keeps opening on it.
+
+- **The API refuses what it cannot read.** An unknown parameter, or a value
+  it does not recognise for `range`, `compare`, `interval`, `group_by`,
+  `metrics`, `limit` or `timeseries`, is a 422 naming the parameter in
+  `source.parameter` and listing the accepted values. Before, `period=7d` was
+  answered with Today, `group_by=bogus` with the site-wide total, and an
+  unknown metric with pageviews, all as a 200. A `limit` above 1,000 is still
+  capped rather than refused.
+
+### Upgrading
+
+There is no migration. Two steps are worth taking:
+
+- **Backfill Broken pages and errors per route.** A routed page answered 4xx
+  or 5xx has been stored with its status since 1.0, so re-running the rollup
+  over your retained raw entries gives the new panel history rather than
+  starting from the upgrade. Links to URLs with no route were never recorded
+  before, so those fill from now on regardless. Slowest routes needs nothing:
+  it reads figures the rollup has always stored.
+
+  ```bash
+  php artisan cairn:rollup --from=2026-09-24 --to=2026-10-24 --period=all
+  ```
+
+- **Add the panels to a published widgets list.** If your published config
+  lists its widgets, Slowest routes and Broken pages appear only once you add
+  them. If you ran `config:cache`, run it again.
+
+If you call the JSON API, check what your client sends. A parameter the API
+did not read, such as a cache-busting `_=…`, used to be ignored and is now a
+422.
 
 ## [1.2.2] - 2026-09-16
 
